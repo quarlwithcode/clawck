@@ -1,0 +1,66 @@
+{
+  "name": "clawck",
+  "version": "0.1.0",
+  "description": "⏱️🦀 Time tracking for AI agents. Toggl for the agentic era.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "clawck": "dist/cli/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/cli/index.ts",
+    "start": "node dist/cli/index.ts",
+    "serve": "tsx src/cli/index.ts serve",
+    "test": "vitest run",
+    "lint": "eslint src/",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "ai",
+    "agents",
+    "time-tracking",
+    "timesheet",
+    "mcp",
+    "llm",
+    "observability",
+    "claude",
+    "openai",
+    "toggl",
+    "productivity"
+  ],
+  "author": "Vince Quarles <vince@cubicrew.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/quarlwithcode/clawck.git"
+  },
+  "homepage": "https://clawck.dev",
+  "dependencies": {
+    "chalk": "^5.3.0",
+    "commander": "^12.0.0",
+    "cors": "^2.8.5",
+    "express": "^4.21.0",
+    "sql.js": "^1.11.0",
+    "uuid": "^10.0.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.0",
+    "@types/express": "^4.17.0",
+    "@types/node": "^22.0.0",
+    "@types/supertest": "^7.2.0",
+    "@types/uuid": "^10.0.0",
+    "supertest": "^7.2.2",
+    "tsx": "^4.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "dist/",
+    "README.md",
+    "LICENSE"
+  ]
+}
