@@ -2,3 +2,8 @@ node_modules/
 dist/
 .clawck/
 *.db
+local_reference_GITIGNORETHIS/
+.DS_Store
+.env
+.env.*
+clawck-report-*

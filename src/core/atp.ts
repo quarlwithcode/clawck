@@ -3,7 +3,7 @@
  * Validation, migration, and export/import for ATP v0.2.
  */
 
-import { ClawckEntry, SPEC_VERSION, TASK_CATEGORIES, TaskCategory } from './types';
+import { ClawckEntry, SPEC_VERSION, APP_VERSION, TASK_CATEGORIES, TaskCategory } from './types';
 import { IndustryBenchmark } from './benchmarks';
 import { PersonalBaseline } from './personal';
 
@@ -108,7 +108,7 @@ export function exportATP(
     atp_version: SPEC_VERSION,
     generated_at: new Date().toISOString(),
     source_tool: 'clawck',
-    source_version: '0.4.0',
+    source_version: APP_VERSION,
     entries: entries.map(e => migrateV1toV2(e)),
     ...(benchmarks ? { benchmarks } : {}),
     ...(personalBaselines ? { personal_baselines: personalBaselines } : {}),
