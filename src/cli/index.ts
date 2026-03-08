@@ -18,23 +18,43 @@ import fs from 'fs';
 import { startServer } from '../server/api';
 import { startMCPServer } from '../server/mcp';
 import { Clawck } from '../core/clawck';
-import { DEFAULT_CONFIG, ClawckConfig, DEFAULT_HUMAN_EQUIVALENTS } from '../core/types';
+import { DEFAULT_CONFIG, ClawckConfig, ClawckEntry, DEFAULT_HUMAN_EQUIVALENTS, WebhookConfig, TrackingPattern } from '../core/types';
+import { generateTimesheetPDF } from '../reports/pdf';
+import { generateTimesheetHTML } from '../reports/html';
+import { DEFAULT_PATTERNS } from '../core/patterns';
+import { readStdin, normalize, detectPlatform, handleHookStart, handleHookStop, PLATFORMS, PLATFORM_NAMES, Platform } from '../hooks';
 
 const program = new Command();
 
 program
   .name('clawck')
   .description('⏱️🦀 Clawck — Time tracking for AI agents')
-  .version('0.1.0');
+  .version('0.3.0')
+  .enablePositionalOptions()
+  .option('--json', 'Output as JSON (for scripting/pipelines)')
+  .option('-d, --dir <path>', 'Data directory (also: CLAWCK_DIR env var)');
 
 // ─── Init ─────────────────────────────────────────────────
 
 program
   .command('init')
   .description('Initialize a .clawck/ directory in the current folder')
-  .option('-d, --dir <path>', 'Data directory', '.clawck')
+  .option('-d, --dir <path>', 'Data directory')
   .action(async (opts) => {
-    const dir = path.resolve(opts.dir);
+    const resolvedDir = resolveDataDir(opts);
+    const dir = path.resolve(resolvedDir);
+
+    // Prevent nesting: don't create .clawck inside an existing .clawck
+    const cwd = process.cwd();
+    if (path.basename(cwd) === '.clawck' && resolvedDir === '.clawck') {
+      console.error('  Already inside a .clawck directory. Aborting to prevent nesting.');
+      process.exit(1);
+    }
+    if (path.basename(dir) === '.clawck' && fs.existsSync(path.join(dir, 'clawck.db'))) {
+      console.error('  Already inside a .clawck directory. Aborting to prevent nesting.');
+      process.exit(1);
+    }
+
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
@@ -50,6 +70,8 @@ program
         default_source: 'clawck',
         human_equivalents: DEFAULT_HUMAN_EQUIVALENTS,
         remote_sources: [],
+        patterns: DEFAULT_PATTERNS,
+        default_pattern: 'default',
       };
       fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
     }
@@ -72,9 +94,9 @@ program
   .command('serve')
   .description('Start the Clawck API server and dashboard')
   .option('-p, --port <number>', 'Port number', '3456')
-  .option('-d, --dir <path>', 'Data directory', '.clawck')
+  .option('-d, --dir <path>', 'Data directory')
   .action(async (opts) => {
-    const config = loadConfig(opts.dir);
+    const config = loadConfig(resolveDataDir(opts));
     config.port = parseInt(opts.port) || config.port;
     startServer(config);
   });
@@ -84,9 +106,9 @@ program
 program
   .command('mcp')
   .description('Start the Clawck MCP server (stdio, for Claude Code / Cline / Cursor)')
-  .option('-d, --dir <path>', 'Data directory', '.clawck')
+  .option('-d, --dir <path>', 'Data directory')
   .action(async (opts) => {
-    const config = loadConfig(opts.dir);
+    const config = loadConfig(resolveDataDir(opts));
     startMCPServer(config);
   });
 
@@ -95,12 +117,18 @@ program
 program
   .command('status')
   .description('Show currently running tasks and stats')
-  .option('-d, --dir <path>', 'Data directory', '.clawck')
+  .option('-d, --dir <path>', 'Data directory')
   .action(async (opts) => {
-    const config = loadConfig(opts.dir);
+    const config = loadConfig(resolveDataDir(opts));
     const clawck = await new Clawck(config).ready();
     const stats = clawck.stats();
     const running = clawck.running();
+
+    if (program.opts().json) {
+      console.log(JSON.stringify({ stats, running }));
+      clawck.close();
+      return;
+    }
 
     console.log(`\n  ⏱️🦀 Clawck Status`);
     console.log(`  ├─ Total entries:  ${stats.total_entries}`);
@@ -126,13 +154,16 @@ program
 program
   .command('report')
   .description('Show a timesheet summary')
-  .option('-d, --dir <path>', 'Data directory', '.clawck')
+  .option('-d, --dir <path>', 'Data directory')
   .option('--days <number>', 'Number of days to include', '7')
   .option('--client <name>', 'Filter by client')
   .option('--project <name>', 'Filter by project')
   .option('--agent <name>', 'Filter by agent')
+  .option('--format <type>', 'Output format (terminal, pdf, or html)', 'terminal')
+  .option('--output <path>', 'Output file path (for pdf format)')
+  .option('--detailed', 'Show individual entries')
   .action(async (opts) => {
-    const config = loadConfig(opts.dir);
+    const config = loadConfig(resolveDataDir(opts));
     const clawck = await new Clawck(config).ready();
     const days = parseInt(opts.days) || 7;
     const to = new Date().toISOString();
@@ -144,10 +175,42 @@ program
       agent: opts.agent,
     });
 
+    if (opts.format === 'html') {
+      const today = new Date().toISOString().split('T')[0];
+      const outputPath = opts.output || `clawck-report-${today}.html`;
+      const dateRange = `${from.split('T')[0]} to ${to.split('T')[0]}`;
+      const rawEntries = clawck.query({ from, to, client: opts.client, project: opts.project, agent: opts.agent, limit: 10000 });
+      const html = generateTimesheetHTML(ts, { dateRange, clientName: opts.client, rawEntries });
+      fs.writeFileSync(outputPath, html);
+      console.log(`  HTML report saved to: ${outputPath}`);
+      clawck.close();
+      return;
+    }
+
+    if (opts.format === 'pdf') {
+      const today = new Date().toISOString().split('T')[0];
+      const outputPath = opts.output || `clawck-report-${today}.pdf`;
+      const dateRange = `${from.split('T')[0]} to ${to.split('T')[0]}`;
+      await generateTimesheetPDF(ts, {
+        clientName: opts.client,
+        dateRange,
+        outputPath,
+      });
+      console.log(`  PDF report saved to: ${outputPath}`);
+      clawck.close();
+      return;
+    }
+
+    if (program.opts().json) {
+      console.log(JSON.stringify(ts));
+      clawck.close();
+      return;
+    }
+
     console.log(`\n  📋 Clawck Timesheet — Last ${days} days`);
     console.log(`  ${'─'.repeat(50)}`);
-    console.log(`  ⏱️  Agent hours:       ${ts.total_agent_hours.toFixed(1)} hrs`);
-    console.log(`  👤 Human equiv:       ${ts.total_human_equiv_hours.toFixed(1)} hrs`);
+    console.log(`  ⏱️  Agent hours:       ${ts.total_agent_hours.toFixed(2)} hrs`);
+    console.log(`  👤 Human equiv:       ${ts.total_human_equiv_hours.toFixed(2)} hrs`);
     console.log(`  💰 Agent cost:        $${ts.total_cost_usd.toFixed(2)}`);
     console.log(`  💚 Est. savings:      $${ts.total_savings_usd.toFixed(0)}`);
     console.log(`  🔢 Total entries:     ${ts.total_entries}`);
@@ -157,19 +220,409 @@ program
       console.log(`\n  📁 By Project:`);
       for (const p of ts.by_project) {
         const bar = '█'.repeat(Math.max(1, Math.round(p.agent_hours / (ts.total_agent_hours || 1) * 20)));
-        console.log(`  ${bar} ${p.project} (${p.client}): ${p.agent_hours.toFixed(1)}h → ${p.human_equiv_hours.toFixed(1)}h human equiv`);
+        console.log(`  ${bar} ${p.project} (${p.client}): ${p.agent_hours.toFixed(2)}h → ${p.human_equiv_hours.toFixed(2)}h human equiv`);
       }
     }
 
     if (ts.by_agent.length > 0) {
       console.log(`\n  🤖 By Agent:`);
       for (const a of ts.by_agent) {
-        console.log(`  • ${a.agent} (${a.model}): ${a.agent_hours.toFixed(1)}h, ${a.success_rate}% success`);
+        console.log(`  • ${a.agent} (${a.model}): ${a.agent_hours.toFixed(2)}h, ${a.success_rate}% success`);
       }
+    }
+
+    if (opts.detailed) {
+      const entries = clawck.query({ client: opts.client, project: opts.project, agent: opts.agent, from, to, limit: 500 });
+      console.log(`\n  📝 Entries:`);
+      printEntryTable(entries);
     }
 
     console.log('');
     clawck.close();
+  });
+
+// ─── Start ───────────────────────────────────────────────
+
+program
+  .command('start <task>')
+  .description('Start tracking time for a task')
+  .option('-d, --dir <path>', 'Data directory')
+  .option('--project <name>', 'Project name')
+  .option('--client <name>', 'Client name')
+  .option('--category <type>', 'Task category')
+  .option('--agent <name>', 'Agent name')
+  .option('--model <name>', 'Model name')
+  .option('--tags <tags...>', 'Tags')
+  .option('--pattern <name>', 'Use a tracking pattern')
+  .action(async (task, opts) => {
+    const config = loadConfig(resolveDataDir(opts));
+    const clawck = await new Clawck(config).ready();
+    const entry = clawck.start({
+      task,
+      project: opts.project,
+      client: opts.client,
+      category: opts.category,
+      agent: opts.agent,
+      model: opts.model,
+      tags: opts.tags,
+      pattern: opts.pattern,
+    });
+
+    if (program.opts().json) {
+      console.log(JSON.stringify(entry));
+    } else {
+      console.log(`  Started: ${entry.task}`);
+      console.log(`  ID:      ${entry.id}`);
+      console.log(`  Project: ${entry.project}  Client: ${entry.client}`);
+    }
+    clawck.close();
+  });
+
+// ─── Stop ────────────────────────────────────────────────
+
+program
+  .command('stop <id>')
+  .description('Stop tracking time for a task')
+  .option('-d, --dir <path>', 'Data directory')
+  .option('--status <status>', 'Outcome (completed/failed)', 'completed')
+  .option('--summary <text>', 'Summary of work done')
+  .option('--tokens-in <n>', 'Input tokens consumed', parseFloat)
+  .option('--tokens-out <n>', 'Output tokens generated', parseFloat)
+  .option('--cost <n>', 'Cost in USD', parseFloat)
+  .option('--tool-calls <n>', 'Number of tool calls', parseInt)
+  .action(async (id, opts) => {
+    const config = loadConfig(resolveDataDir(opts));
+    const clawck = await new Clawck(config).ready();
+    const entry = clawck.stop({
+      id,
+      status: opts.status,
+      summary: opts.summary,
+      tokens_in: opts.tokensIn,
+      tokens_out: opts.tokensOut,
+      cost_usd: opts.cost,
+      tool_calls: opts.toolCalls,
+    });
+
+    if (!entry) {
+      if (program.opts().json) {
+        console.log(JSON.stringify({ ok: false, error: `Entry not found: ${id}` }));
+      } else {
+        console.error(`  Entry not found: ${id}`);
+      }
+      clawck.close();
+      process.exit(1);
+    }
+
+    const duration_minutes = entry.end
+      ? (new Date(entry.end).getTime() - new Date(entry.start).getTime()) / 60000
+      : null;
+
+    if (program.opts().json) {
+      console.log(JSON.stringify({ ...entry, duration_minutes: duration_minutes ? Math.round(duration_minutes * 100) / 100 : null }));
+    } else {
+      console.log(`  Stopped: ${entry.task}`);
+      console.log(`  Duration: ${duration_minutes !== null ? formatDuration(duration_minutes) : 'unknown'}  Status: ${entry.status}`);
+    }
+    clawck.close();
+  });
+
+// ─── Log ─────────────────────────────────────────────────
+
+program
+  .command('log <task>')
+  .description('Log a completed task retroactively')
+  .option('-d, --dir <path>', 'Data directory')
+  .option('--duration <minutes>', 'Duration in minutes', parseFloat)
+  .option('--project <name>', 'Project name')
+  .option('--client <name>', 'Client name')
+  .option('--category <type>', 'Task category')
+  .option('--agent <name>', 'Agent name')
+  .option('--model <name>', 'Model name')
+  .option('--summary <text>', 'Summary of work done')
+  .option('--tags <tags...>', 'Tags')
+  .option('--pattern <name>', 'Use a tracking pattern')
+  .action(async (task, opts) => {
+    if (!opts.duration) {
+      console.error('  --duration <minutes> is required');
+      process.exit(1);
+    }
+    const config = loadConfig(resolveDataDir(opts));
+    const clawck = await new Clawck(config).ready();
+    const entry = clawck.log({
+      task,
+      duration_minutes: opts.duration,
+      project: opts.project,
+      client: opts.client,
+      category: opts.category,
+      agent: opts.agent,
+      model: opts.model,
+      summary: opts.summary,
+      tags: opts.tags,
+      pattern: opts.pattern,
+    });
+
+    if (program.opts().json) {
+      console.log(JSON.stringify(entry));
+    } else {
+      console.log(`  Logged: ${entry.task}`);
+      console.log(`  ID: ${entry.id}  Duration: ${opts.duration}m`);
+    }
+    clawck.close();
+  });
+
+// ─── Get ─────────────────────────────────────────────────
+
+program
+  .command('get <id>')
+  .description('Get a single time entry by ID')
+  .option('-d, --dir <path>', 'Data directory')
+  .action(async (id, opts) => {
+    const config = loadConfig(resolveDataDir(opts));
+    const clawck = await new Clawck(config).ready();
+    const entry = clawck.get(id);
+
+    if (!entry) {
+      if (program.opts().json) {
+        console.log(JSON.stringify({ ok: false, error: `Entry not found: ${id}` }));
+      } else {
+        console.error(`  Entry not found: ${id}`);
+      }
+      clawck.close();
+      process.exit(1);
+    }
+
+    if (program.opts().json) {
+      console.log(JSON.stringify(entry));
+    } else {
+      console.log(`  ${entry.task}`);
+      console.log(`  ID: ${entry.id}  Status: ${entry.status}`);
+      console.log(`  Project: ${entry.project}  Client: ${entry.client}`);
+      console.log(`  Agent: ${entry.agent}  Model: ${entry.model}`);
+      console.log(`  Start: ${entry.start}  End: ${entry.end || '(running)'}`);
+      console.log(`  Approved: ${entry.approved ? 'yes' : 'no'}`);
+      console.log(`  Created: ${entry.created_at}  Updated: ${entry.updated_at}`);
+    }
+    clawck.close();
+  });
+
+// ─── Entries ─────────────────────────────────────────────
+
+program
+  .command('entries')
+  .description('Query time entries')
+  .option('-d, --dir <path>', 'Data directory')
+  .option('--client <name>', 'Filter by client')
+  .option('--project <name>', 'Filter by project')
+  .option('--agent <name>', 'Filter by agent')
+  .option('--status <status>', 'Filter by status')
+  .option('--from <date>', 'Start date (ISO 8601)')
+  .option('--to <date>', 'End date (ISO 8601)')
+  .option('--limit <n>', 'Max entries', '50')
+  .option('--approved', 'Show only approved entries')
+  .option('--unapproved', 'Show only unapproved entries')
+  .action(async (opts) => {
+    const config = loadConfig(resolveDataDir(opts));
+    const clawck = await new Clawck(config).ready();
+    const approvedFilter = opts.approved ? true : opts.unapproved ? false : undefined;
+    const entries = clawck.query({
+      client: opts.client,
+      project: opts.project,
+      agent: opts.agent,
+      status: opts.status,
+      from: opts.from,
+      to: opts.to,
+      limit: parseInt(opts.limit) || 50,
+      approved: approvedFilter,
+    });
+
+    if (program.opts().json) {
+      console.log(JSON.stringify(entries));
+    } else {
+      console.log(`\n  ${entries.length} entries:`);
+      for (const e of entries) {
+        const dur = e.end
+          ? `${((new Date(e.end).getTime() - new Date(e.start).getTime()) / 60000).toFixed(0)}m`
+          : 'running';
+        console.log(`  ${e.id.slice(0, 8)}  ${e.status.padEnd(9)}  ${dur.padStart(6)}  ${e.project}/${e.client}  ${e.task.slice(0, 50)}`);
+      }
+    }
+    console.log('');
+    clawck.close();
+  });
+
+// ─── Approve ─────────────────────────────────────────────
+
+program
+  .command('approve <id>')
+  .description('Approve a time entry (supports 8-char prefix)')
+  .option('-d, --dir <path>', 'Data directory')
+  .action(async (id, opts) => {
+    const config = loadConfig(resolveDataDir(opts));
+    const clawck = await new Clawck(config).ready();
+    const entry = resolveEntryId(clawck, id);
+
+    if (!entry) {
+      clawck.close();
+      process.exit(1);
+    }
+
+    const approved = clawck.approve(entry.id);
+
+    if (program.opts().json) {
+      console.log(JSON.stringify(approved));
+    } else {
+      console.log(`  Approved: ${approved!.task}`);
+      console.log(`  ID: ${approved!.id.slice(0, 8)}  Project: ${approved!.project}`);
+    }
+    clawck.close();
+  });
+
+// ─── Pattern ─────────────────────────────────────────────
+
+const pattern = program
+  .command('pattern')
+  .description('Manage tracking patterns (task templates)');
+
+pattern
+  .command('list')
+  .description('List all tracking patterns')
+  .option('-d, --dir <path>', 'Data directory')
+  .action(async (opts) => {
+    const config = loadConfig(resolveDataDir(opts));
+    const clawck = await new Clawck(config).ready();
+    const patterns = clawck.getPatterns();
+
+    if (program.opts().json) {
+      console.log(JSON.stringify(patterns));
+      clawck.close();
+      return;
+    }
+
+    console.log(`\n  Tracking Patterns:`);
+    for (const p of patterns) {
+      const defaultMark = config.default_pattern === p.name ? ' (default)' : '';
+      console.log(`  - ${p.name}${defaultMark}`);
+      if (p.description) console.log(`    ${p.description}`);
+      const fields: string[] = [];
+      if (p.category) fields.push(`category: ${p.category}`);
+      if (p.project) fields.push(`project: ${p.project}`);
+      if (p.client) fields.push(`client: ${p.client}`);
+      if (p.agent) fields.push(`agent: ${p.agent}`);
+      if (p.tags?.length) fields.push(`tags: ${p.tags.join(', ')}`);
+      if (fields.length) console.log(`    ${fields.join('  ')}`);
+    }
+    console.log('');
+    clawck.close();
+  });
+
+pattern
+  .command('add')
+  .description('Add a new tracking pattern')
+  .requiredOption('--name <name>', 'Pattern name')
+  .option('-d, --dir <path>', 'Data directory')
+  .option('--category <type>', 'Default category')
+  .option('--project <name>', 'Default project')
+  .option('--client <name>', 'Default client')
+  .option('--agent <name>', 'Default agent')
+  .option('--tags <tags...>', 'Default tags')
+  .option('--description <text>', 'Pattern description')
+  .action(async (opts) => {
+    const dataDir = resolveDataDir(opts);
+    const config = loadConfig(dataDir);
+    const configPath = path.join(path.resolve(dataDir), 'config.json');
+
+    const newPattern: TrackingPattern = { name: opts.name };
+    if (opts.description) newPattern.description = opts.description;
+    if (opts.category) newPattern.category = opts.category;
+    if (opts.project) newPattern.project = opts.project;
+    if (opts.client) newPattern.client = opts.client;
+    if (opts.agent) newPattern.agent = opts.agent;
+    if (opts.tags) newPattern.tags = opts.tags;
+
+    let fileConfig: any = {};
+    if (fs.existsSync(configPath)) {
+      try { fileConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8')); } catch {}
+    }
+    if (!fileConfig.patterns) fileConfig.patterns = [...DEFAULT_PATTERNS];
+    fileConfig.patterns.push(newPattern);
+    fs.writeFileSync(configPath, JSON.stringify(fileConfig, null, 2));
+
+    console.log(`  Added pattern: ${opts.name}`);
+  });
+
+pattern
+  .command('use <name>')
+  .description('Set the default tracking pattern')
+  .option('-d, --dir <path>', 'Data directory')
+  .action(async (name, opts) => {
+    const dataDir = resolveDataDir(opts);
+    const configPath = path.join(path.resolve(dataDir), 'config.json');
+
+    let fileConfig: any = {};
+    if (fs.existsSync(configPath)) {
+      try { fileConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8')); } catch {}
+    }
+    fileConfig.default_pattern = name;
+    fs.writeFileSync(configPath, JSON.stringify(fileConfig, null, 2));
+
+    console.log(`  Default pattern set to: ${name}`);
+  });
+
+// ─── Setup ───────────────────────────────────────────────
+
+program
+  .command('setup [target]')
+  .description('Output ready-to-paste config snippets for agent integration')
+  .action(async (target) => {
+    const snippetsDir = path.resolve(__dirname, '../../docs/snippets');
+
+    function readSnippet(filename: string): string {
+      const filePath = path.join(snippetsDir, filename);
+      if (!fs.existsSync(filePath)) {
+        console.error(`  Snippet not found: ${filePath}`);
+        process.exit(1);
+      }
+      return fs.readFileSync(filePath, 'utf-8');
+    }
+
+    if (!target) {
+      console.log(`
+  ⏱️🦀 Clawck Setup — Agent Integration
+
+  Available targets:
+
+    clawck setup claude      Output CLAUDE.md time tracking snippet
+    clawck setup mcp         Output MCP server config JSON
+    clawck setup openclaw    Output OpenClaw snippets (AGENT.md + HEARTBEAT.md)
+
+  Paste the output into the appropriate file for your agent platform.
+  See docs/skills/clawck-setup.md for full integration guide.
+`);
+      return;
+    }
+
+    switch (target) {
+      case 'claude': {
+        console.log('\n# Add this to your CLAUDE.md (project or ~/.claude/CLAUDE.md for global):\n');
+        console.log(readSnippet('claude-md.txt'));
+        break;
+      }
+      case 'mcp': {
+        console.log('\n# Add this to your mcp_servers.json (or ~/.claude/mcp_servers.json for global):\n');
+        console.log(readSnippet('mcp-config.json'));
+        break;
+      }
+      case 'openclaw': {
+        console.log('\n# ─── AGENT.md ─────────────────────────────────────────\n');
+        console.log(readSnippet('openclaw-agent-md.txt'));
+        console.log('\n# ─── HEARTBEAT.md ─────────────────────────────────────\n');
+        console.log(readSnippet('openclaw-heartbeat-md.txt'));
+        break;
+      }
+      default:
+        console.error(`  Unknown target: "${target}". Run "clawck setup" to see options.`);
+        process.exit(1);
+    }
   });
 
 // ─── Seed (for testing) ──────────────────────────────────
@@ -177,18 +630,18 @@ program
 program
   .command('seed')
   .description('Seed the database with sample entries (for testing)')
-  .option('-d, --dir <path>', 'Data directory', '.clawck')
+  .option('-d, --dir <path>', 'Data directory')
   .option('-n, --count <number>', 'Number of entries', '25')
   .action(async (opts) => {
-    const config = loadConfig(opts.dir);
+    const config = loadConfig(resolveDataDir(opts));
     const clawck = await new Clawck(config).ready();
     const count = parseInt(opts.count) || 25;
 
     const agents = ['cubi-research-01', 'cubi-writer-02', 'cubi-coder-03', 'cubi-analyst-04', 'cubi-outreach-05'];
     const models = ['claude-sonnet-4-20250514', 'claude-haiku-4-5-20251001', 'gpt-4o', 'gemini-2.0-flash'];
-    const clients = ['acme-corp', 'globex-inc', 'initech', 'hooli'];
-    const projects = ['website-rebuild', 'seo-content', 'grant-research', 'data-migration', 'email-campaigns'];
-    const categories = ['research', 'content', 'code', 'data_entry', 'analysis', 'communication', 'testing', 'design'] as const;
+    const clients = ['acme-corp', 'globex-inc', 'initech', 'hooli', 'umbrella-co'];
+    const projects = ['website-rebuild', 'seo-content', 'grant-research', 'data-migration', 'email-campaigns', 'api-v2'];
+    const categories = ['research', 'content', 'code', 'data_entry', 'analysis', 'communication', 'testing', 'design', 'planning', 'other'] as const;
     const tasks = [
       'Research competitor pricing strategies',
       'Write blog post about AI automation',
@@ -205,22 +658,29 @@ program
       'Review and optimize database queries',
       'Create investor pitch deck outline',
       'Summarize recent industry news',
+      'Plan sprint roadmap for Q4',
+      'Coordinate team standup notes',
     ];
 
+    const pick = <T>(arr: readonly T[]): T => arr[Math.floor(Math.random() * arr.length)];
+
+    // Ensure coverage: cycle through all clients, projects, categories, agents
     for (let i = 0; i < count; i++) {
-      const daysAgo = Math.random() * 14;
       const durationMin = 5 + Math.random() * 120;
       const tokensIn = Math.round(1000 + Math.random() * 50000);
       const tokensOut = Math.round(500 + Math.random() * 20000);
-      const category = categories[Math.floor(Math.random() * categories.length)];
+      const category = i < categories.length ? categories[i] : pick(categories);
+      const client = i < clients.length ? clients[i] : pick(clients);
+      const project = i < projects.length ? projects[i] : pick(projects);
+      const agent = i < agents.length ? agents[i] : pick(agents);
 
-      clawck.log({
-        task: tasks[Math.floor(Math.random() * tasks.length)],
-        project: projects[Math.floor(Math.random() * projects.length)],
-        client: clients[Math.floor(Math.random() * clients.length)],
+      const entry = clawck.log({
+        task: pick(tasks),
+        project,
+        client,
         category,
-        agent: agents[Math.floor(Math.random() * agents.length)],
-        model: models[Math.floor(Math.random() * models.length)],
+        agent,
+        model: pick(models),
         duration_minutes: Math.round(durationMin),
         tokens_in: tokensIn,
         tokens_out: tokensOut,
@@ -228,14 +688,421 @@ program
         summary: 'Auto-generated seed entry for testing',
         tags: ['seed', 'test'],
       });
+
+      // Approve ~60% of completed entries
+      if (Math.random() < 0.6) {
+        clawck.approve(entry.id);
+      }
     }
 
-    console.log(`\n  ⏱️🦀 Seeded ${count} entries into Clawck!`);
-    console.log(`  └─ Run: clawck serve\n`);
+    // Add 2-3 running entries
+    for (let i = 0; i < 3; i++) {
+      clawck.start({
+        task: pick(tasks),
+        project: pick(projects),
+        client: pick(clients),
+        category: pick(categories),
+        agent: pick(agents),
+        model: pick(models),
+        tags: ['seed'],
+      });
+    }
+
+    // Add 2-3 failed entries via upsert
+    const { v4: uuid } = await import('uuid');
+    for (let i = 0; i < 3; i++) {
+      const daysAgo = Math.random() * 7;
+      const start = new Date(Date.now() - daysAgo * 86400000);
+      const end = new Date(start.getTime() + (10 + Math.random() * 30) * 60000);
+      clawck.upsert({
+        id: uuid(),
+        task: pick(tasks),
+        project: pick(projects),
+        client: pick(clients),
+        category: pick(categories),
+        agent: pick(agents),
+        model: pick(models),
+        start: start.toISOString(),
+        end: end.toISOString(),
+        status: 'failed',
+        tokens_in: Math.round(500 + Math.random() * 5000),
+        tokens_out: Math.round(100 + Math.random() * 1000),
+        cost_usd: Math.round(Math.random() * 0.05 * 10000) / 10000,
+        tool_calls: Math.round(Math.random() * 5),
+        summary: 'Task failed - auto-generated seed entry',
+        tags: ['seed', 'failed'],
+        source: 'clawck',
+        spec_version: '0.1.0',
+      });
+    }
+
+    console.log(`\n  ⏱️🦀 Seeded ${count + 6} entries into Clawck!`);
+    console.log(`  ├─ ${count} completed entries (~60% approved)`);
+    console.log(`  ├─ 3 running entries`);
+    console.log(`  ├─ 3 failed entries`);
+    console.log(`  │`);
+    console.log(`  │  Try these:`);
+    console.log(`  │  clawck list -d ${resolveDataDir(opts)}`);
+    console.log(`  │  clawck report --format html -d ${resolveDataDir(opts)}`);
+    console.log(`  │  clawck pattern list -d ${resolveDataDir(opts)}`);
+    console.log(`  │  clawck entries --approved -d ${resolveDataDir(opts)}`);
+    console.log(`  └─ clawck serve -d ${resolveDataDir(opts)}\n`);
     clawck.close();
   });
 
+// ─── List ───────────────────────────────────────────────
+
+program
+  .command('list')
+  .description('List time entries in a human-readable table')
+  .option('-d, --dir <path>', 'Data directory')
+  .option('--days <number>', 'Number of days to include', '7')
+  .option('--client <name>', 'Filter by client')
+  .option('--project <name>', 'Filter by project')
+  .option('--agent <name>', 'Filter by agent')
+  .option('--limit <n>', 'Max entries', '50')
+  .option('--approved', 'Show only approved entries')
+  .option('--unapproved', 'Show only unapproved entries')
+  .action(async (opts) => {
+    const config = loadConfig(resolveDataDir(opts));
+    const clawck = await new Clawck(config).ready();
+    const days = parseInt(opts.days) || 7;
+    const from = new Date(Date.now() - days * 86400000).toISOString();
+    const to = new Date().toISOString();
+    const approvedFilter = opts.approved ? true : opts.unapproved ? false : undefined;
+
+    const entries = clawck.query({
+      client: opts.client,
+      project: opts.project,
+      agent: opts.agent,
+      from,
+      to,
+      limit: parseInt(opts.limit) || 50,
+      approved: approvedFilter,
+    });
+
+    if (program.opts().json) {
+      console.log(JSON.stringify(entries));
+      clawck.close();
+      return;
+    }
+
+    printEntryTable(entries);
+    clawck.close();
+  });
+
+// ─── Delete ─────────────────────────────────────────────
+
+program
+  .command('delete <id>')
+  .description('Delete a time entry by ID (supports 8-char prefix)')
+  .option('-d, --dir <path>', 'Data directory')
+  .action(async (id, opts) => {
+    const config = loadConfig(resolveDataDir(opts));
+    const clawck = await new Clawck(config).ready();
+    const entry = resolveEntryId(clawck, id);
+
+    if (!entry) {
+      clawck.close();
+      process.exit(1);
+    }
+
+    clawck.delete(entry.id);
+
+    if (program.opts().json) {
+      console.log(JSON.stringify({ ok: true, deleted: entry }));
+    } else {
+      console.log(`  Deleted: ${entry.task}`);
+      console.log(`  ID: ${entry.id.slice(0, 8)}  Project: ${entry.project}  Agent: ${entry.agent}`);
+    }
+    clawck.close();
+  });
+
+// ─── Edit ───────────────────────────────────────────────
+
+program
+  .command('edit <id>')
+  .description('Edit a time entry by ID (supports 8-char prefix)')
+  .option('-d, --dir <path>', 'Data directory')
+  .option('--task <text>', 'Update task description')
+  .option('--duration <minutes>', 'Update duration (recalculates end)', parseFloat)
+  .option('--project <name>', 'Update project')
+  .option('--client <name>', 'Update client')
+  .option('--agent <name>', 'Update agent')
+  .option('--category <type>', 'Update category')
+  .option('--summary <text>', 'Update summary')
+  .action(async (id, opts) => {
+    const config = loadConfig(resolveDataDir(opts));
+    const clawck = await new Clawck(config).ready();
+    const entry = resolveEntryId(clawck, id);
+
+    if (!entry) {
+      clawck.close();
+      process.exit(1);
+    }
+
+    const updates: any = {};
+    if (opts.task) updates.task = opts.task;
+    if (opts.project) updates.project = opts.project;
+    if (opts.client) updates.client = opts.client;
+    if (opts.agent) updates.agent = opts.agent;
+    if (opts.category) updates.category = opts.category;
+    if (opts.summary) updates.summary = opts.summary;
+    if (opts.duration !== undefined) {
+      updates.end = new Date(new Date(entry.start).getTime() + opts.duration * 60000).toISOString();
+    }
+
+    const updated = clawck.update(entry.id, updates);
+
+    if (program.opts().json) {
+      console.log(JSON.stringify(updated));
+    } else {
+      console.log(`  Updated: ${updated!.task}`);
+      console.log(`  ID: ${updated!.id.slice(0, 8)}  Project: ${updated!.project}  Agent: ${updated!.agent}`);
+      if (opts.duration !== undefined) {
+        console.log(`  Duration: ${formatDuration(opts.duration)}`);
+      }
+    }
+    clawck.close();
+  });
+
+// ─── Export ──────────────────────────────────────────────
+
+program
+  .command('export')
+  .description('Export time entries as JSON or CSV')
+  .option('-d, --dir <path>', 'Data directory')
+  .option('--format <type>', 'Output format (json or csv)', 'json')
+  .option('--days <number>', 'Number of days to include', '7')
+  .option('--client <name>', 'Filter by client')
+  .option('--project <name>', 'Filter by project')
+  .option('--agent <name>', 'Filter by agent')
+  .action(async (opts) => {
+    const config = loadConfig(resolveDataDir(opts));
+    const clawck = await new Clawck(config).ready();
+    const days = parseInt(opts.days) || 7;
+    const from = new Date(Date.now() - days * 86400000).toISOString();
+    const to = new Date().toISOString();
+
+    const entries = clawck.query({
+      client: opts.client,
+      project: opts.project,
+      agent: opts.agent,
+      from,
+      to,
+      limit: 10000,
+    });
+
+    if (opts.format === 'csv') {
+      const csvEscape = (val: string): string => {
+        if (val.includes(',') || val.includes('"') || val.includes('\n')) {
+          return '"' + val.replace(/"/g, '""') + '"';
+        }
+        return val;
+      };
+      console.log('id,date,task,category,duration_minutes,project,client,agent,model,status,tokens_in,tokens_out,cost_usd,summary,created_at,updated_at');
+      for (const e of entries) {
+        const durationMin = e.end
+          ? ((new Date(e.end).getTime() - new Date(e.start).getTime()) / 60000).toFixed(2)
+          : '0';
+        const date = e.start.split('T')[0];
+        console.log([
+          csvEscape(e.id),
+          date,
+          csvEscape(e.task),
+          csvEscape(e.category),
+          durationMin,
+          csvEscape(e.project),
+          csvEscape(e.client),
+          csvEscape(e.agent),
+          csvEscape(e.model),
+          csvEscape(e.status),
+          String(e.tokens_in),
+          String(e.tokens_out),
+          e.cost_usd.toFixed(4),
+          csvEscape(e.summary),
+          csvEscape(e.created_at || ''),
+          csvEscape(e.updated_at || ''),
+        ].join(','));
+      }
+    } else {
+      console.log(JSON.stringify(entries, null, 2));
+    }
+
+    clawck.close();
+  });
+
+// ─── Hook (runtime, singular) ────────────────────────────
+
+const hook = program
+  .command('hook')
+  .description('Runtime hook command (called by platform hooks, reads JSON from stdin)');
+
+hook
+  .command('start')
+  .description('Start tracking — called by platform hooks')
+  .option('-d, --dir <path>', 'Data directory')
+  .option('--platform <name>', 'Force platform (claude|gemini|cursor|cline|windsurf|codex)')
+  .action(async (opts) => {
+    try {
+      const raw = await readStdin();
+      let json: Record<string, unknown> = {};
+      if (raw.trim()) {
+        try { json = JSON.parse(raw); } catch { json = {}; }
+      }
+
+      const platform = (opts.platform as Platform) || undefined;
+      const context = normalize(json, platform);
+      const config = loadConfig(resolveDataDir(opts));
+
+      await handleHookStart(config, context);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`clawck: hook start failed: ${msg}\n`);
+    }
+    process.exit(0);
+  });
+
+hook
+  .command('stop')
+  .description('Stop tracking — called by platform hooks')
+  .option('-d, --dir <path>', 'Data directory')
+  .option('--platform <name>', 'Force platform (claude|gemini|cursor|cline|windsurf|codex)')
+  .action(async (opts) => {
+    try {
+      const raw = await readStdin();
+      let json: Record<string, unknown> = {};
+      if (raw.trim()) {
+        try { json = JSON.parse(raw); } catch { json = {}; }
+      }
+
+      const platform = (opts.platform as Platform) || undefined;
+      const context = normalize(json, platform);
+      const config = loadConfig(resolveDataDir(opts));
+
+      await handleHookStop(config, context);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`clawck: hook stop failed: ${msg}\n`);
+    }
+    process.exit(0);
+  });
+
+// ─── Hooks (management, plural) ──────────────────────────
+
+const hooks = program
+  .command('hooks')
+  .description('Manage platform hook integrations');
+
+hooks
+  .command('install <platform>')
+  .description('Output hook configuration for a platform')
+  .action(async (platformName) => {
+    const key = platformName.toLowerCase() as keyof typeof PLATFORMS;
+    if (!PLATFORMS[key]) {
+      console.error(`  Unknown platform: "${platformName}"`);
+      console.error(`  Available: ${PLATFORM_NAMES.join(', ')}`);
+      process.exit(1);
+    }
+
+    const info = PLATFORMS[key];
+    console.log(`\n  ⏱️🦀 Clawck Hooks — ${info.displayName}`);
+    console.log(`  ${'─'.repeat(40)}`);
+
+    if (info.configPaths.length > 0) {
+      console.log(`\n  Add to: ${info.configPaths[0]}\n`);
+    }
+
+    console.log(info.generate());
+
+    console.log(`\n  Or copy from: docs/snippets/${info.snippetFile}`);
+    console.log('');
+  });
+
+hooks
+  .command('status')
+  .description('Show which platforms have clawck hooks installed')
+  .action(async () => {
+    console.log(`\n  ⏱️🦀 Clawck Hooks — Status`);
+    console.log(`  ${'─'.repeat(40)}`);
+
+    for (const name of PLATFORM_NAMES) {
+      const info = PLATFORMS[name];
+      const installed = info.detect();
+      const icon = installed ? '✓' : '✗';
+      console.log(`  ${icon}  ${info.displayName.padEnd(16)} ${installed ? 'installed' : 'not found'}`);
+    }
+
+    console.log(`\n  Run "clawck hooks install <platform>" to set up a platform.\n`);
+  });
+
 // ─── Helpers ──────────────────────────────────────────────
+
+function resolveDataDir(subcommandOpts: { dir?: string }): string {
+  return subcommandOpts.dir
+    ?? program.opts().dir
+    ?? process.env.CLAWCK_DIR
+    ?? '.clawck';
+}
+
+function formatDuration(mins: number): string {
+  if (mins < 1) return `${Math.round(mins * 60)}s`;
+  if (mins < 60) return `${Math.round(mins)} min`;
+  const h = Math.floor(mins / 60);
+  const m = Math.round(mins % 60);
+  return m > 0 ? `${h}h ${m}m` : `${h}h`;
+}
+
+function resolveEntryId(clawck: Clawck, idPrefix: string): ClawckEntry | null {
+  const exact = clawck.get(idPrefix);
+  if (exact) return exact;
+
+  const matches = clawck.findByPrefix(idPrefix);
+  if (matches.length === 0) {
+    if (program.opts().json) {
+      console.log(JSON.stringify({ ok: false, error: `No entry found matching: ${idPrefix}` }));
+    } else {
+      console.error(`  No entry found matching: ${idPrefix}`);
+    }
+    return null;
+  }
+  if (matches.length > 1) {
+    if (program.opts().json) {
+      console.log(JSON.stringify({ ok: false, error: 'Ambiguous ID prefix', matches: matches.map(e => ({ id: e.id, task: e.task })) }));
+    } else {
+      console.error(`  Ambiguous ID prefix "${idPrefix}". Matches:`);
+      for (const m of matches) {
+        console.error(`    ${m.id.slice(0, 8)}  ${m.task.slice(0, 50)}`);
+      }
+    }
+    return null;
+  }
+  return matches[0];
+}
+
+function printEntryTable(entries: ClawckEntry[]): void {
+  if (entries.length === 0) {
+    console.log('\n  No entries found.\n');
+    return;
+  }
+
+  const header = `  ${'ID'.padEnd(10)} ${'Task'.padEnd(42)} ${'Duration'.padEnd(10)} ${'Project'.padEnd(12)} ${'Agent'.padEnd(12)} ${'OK'.padEnd(4)} ${'Time'}`;
+  console.log(`\n${header}`);
+  console.log(`  ${'─'.repeat(header.length - 2)}`);
+
+  for (const e of entries) {
+    const durationMin = e.end
+      ? (new Date(e.end).getTime() - new Date(e.start).getTime()) / 60000
+      : (Date.now() - new Date(e.start).getTime()) / 60000;
+    const dur = e.end ? formatDuration(durationMin) : 'running';
+    const task = e.task.length > 40 ? e.task.slice(0, 37) + '...' : e.task;
+    const time = new Date(e.start).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+    const approved = e.approved ? 'v' : '-';
+    console.log(`  ${e.id.slice(0, 8).padEnd(10)} ${task.padEnd(42)} ${dur.padEnd(10)} ${e.project.slice(0, 12).padEnd(12)} ${e.agent.padEnd(12)} ${approved.padEnd(4)} ${time}`);
+  }
+  console.log(`\n  ${entries.length} entries\n`);
+}
+
 
 function loadConfig(dir: string): ClawckConfig {
   const dataDir = path.resolve(dir);
@@ -247,6 +1114,47 @@ function loadConfig(dir: string): ClawckConfig {
       fileConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
     } catch (e) {
       // Ignore bad config
+    }
+  }
+
+  // Validate key config fields
+  if (fileConfig.port !== undefined) {
+    if (typeof fileConfig.port !== 'number' || fileConfig.port < 1 || fileConfig.port > 65535) {
+      console.error(`  Config error: "port" must be a number between 1 and 65535 (got ${JSON.stringify(fileConfig.port)})`);
+      process.exit(1);
+    }
+  }
+  if (fileConfig.human_equivalents !== undefined) {
+    if (typeof fileConfig.human_equivalents !== 'object' || fileConfig.human_equivalents === null) {
+      console.error('  Config error: "human_equivalents" must be an object');
+      process.exit(1);
+    }
+    for (const [key, val] of Object.entries(fileConfig.human_equivalents)) {
+      const v = val as any;
+      if (typeof v.multiplier !== 'number' || typeof v.human_rate_usd !== 'number') {
+        console.error(`  Config error: "human_equivalents.${key}" must have numeric "multiplier" and "human_rate_usd"`);
+        process.exit(1);
+      }
+    }
+  }
+  if (fileConfig.remote_sources !== undefined && !Array.isArray(fileConfig.remote_sources)) {
+    console.error('  Config error: "remote_sources" must be an array');
+    process.exit(1);
+  }
+  if (fileConfig.webhooks !== undefined) {
+    if (!Array.isArray(fileConfig.webhooks)) {
+      console.error('  Config error: "webhooks" must be an array');
+      process.exit(1);
+    }
+    for (const [i, wh] of (fileConfig.webhooks as WebhookConfig[]).entries()) {
+      if (!wh.url || typeof wh.url !== 'string') {
+        console.error(`  Config error: "webhooks[${i}].url" must be a string`);
+        process.exit(1);
+      }
+      if (!Array.isArray(wh.events)) {
+        console.error(`  Config error: "webhooks[${i}].events" must be an array`);
+        process.exit(1);
+      }
     }
   }
 

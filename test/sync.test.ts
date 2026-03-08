@@ -1,41 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ClawckDB } from '../src/core/database';
 import { SyncManager } from '../src/core/sync';
-import { ClawckEntry, ClawckConfig, DEFAULT_CONFIG, SPEC_VERSION } from '../src/core/types';
+import { ClawckConfig } from '../src/core/types';
 import { createServer } from '../src/server/api';
 import request from 'supertest';
-import fs from 'fs';
-import path from 'path';
-import os from 'os';
-
-function makeTmpConfig(): ClawckConfig {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'clawck-test-'));
-  return { ...DEFAULT_CONFIG, data_dir: dir };
-}
-
-function makeEntry(overrides: Partial<ClawckEntry> = {}): ClawckEntry {
-  return {
-    id: overrides.id || `test-${Math.random().toString(36).slice(2)}`,
-    agent: 'test-agent',
-    model: 'test-model',
-    client: 'test-client',
-    project: 'test-project',
-    task: 'test task',
-    category: 'code',
-    start: '2026-03-07T10:00:00.000Z',
-    end: '2026-03-07T11:00:00.000Z',
-    status: 'completed',
-    tokens_in: 100,
-    tokens_out: 200,
-    cost_usd: 0.01,
-    tool_calls: 5,
-    summary: 'test summary',
-    tags: ['test'],
-    source: 'test',
-    spec_version: SPEC_VERSION,
-    ...overrides,
-  };
-}
+import { makeTmpConfig, makeEntry } from './helpers';
 
 describe('Database upsert', () => {
   let db: ClawckDB;

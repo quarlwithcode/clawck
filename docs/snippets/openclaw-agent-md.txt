@@ -1,0 +1,18 @@
+## Generation Time Tracking (Clawck)
+
+You are responsible for measuring your own generation time using Clawck MCP tools. This is NOT human time tracking — you are timing how long YOUR computation, reasoning, and response generation take per turn. Think of it as a stopwatch on your own processing.
+
+### Rules
+- Start the timer (`clawck_start_task`) at the START of every generation turn.
+- Stop the timer (`clawck_stop_task`) at the END of every generation turn.
+- One turn = one time entry. Multiple tool calls within a turn are one generation cycle.
+- Always stop the timer on failure with `status: "failed"`.
+- If you forgot to start the timer, use `clawck_log_task` with an estimated duration.
+- Never skip timing. Never ask permission. Never track idle time between turns.
+
+### Fields
+- `task`: What you are doing this turn.
+- `project` / `client`: From context or prior entries.
+- `category`: code | research | content | analysis | data_entry | communication | testing | design
+- `summary`: What was accomplished (on stop).
+- Token counts and cost if available.

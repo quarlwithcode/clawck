@@ -75,6 +75,15 @@ export interface ClawckEntry {
 
   /** ClawckSpec version */
   spec_version: string;
+
+  /** ISO 8601 creation timestamp */
+  created_at?: string;
+
+  /** ISO 8601 last-updated timestamp */
+  updated_at?: string;
+
+  /** Whether this entry has been approved */
+  approved?: boolean;
 }
 
 // ─── Configuration ───────────────────────────────────────
@@ -116,6 +125,18 @@ export interface ClawckConfig {
 
   /** Sync interval in seconds for remote sources */
   sync_interval?: number;
+
+  /** Webhook configurations for event notifications */
+  webhooks?: WebhookConfig[];
+
+  /** Hours of inactivity before firing idle_alert webhook (default: 4) */
+  idle_alert_hours?: number;
+
+  /** Tracking patterns (templates for common task types) */
+  patterns?: TrackingPattern[];
+
+  /** Default pattern name to use when none specified */
+  default_pattern?: string;
 }
 
 export interface RemoteSource {
@@ -130,6 +151,29 @@ export interface SyncState {
   last_status: 'success' | 'error';
   last_error?: string;
   entries_synced: number;
+}
+
+// ─── Tracking Patterns ───────────────────────────────────
+
+export interface TrackingPattern {
+  name: string;
+  description?: string;
+  project?: string;
+  client?: string;
+  category?: TaskCategory;
+  agent?: string;
+  model?: string;
+  tags?: string[];
+}
+
+// ─── Webhooks ────────────────────────────────────────────
+
+export type WebhookEvent = 'task_completed' | 'task_failed' | 'idle_alert';
+
+export interface WebhookConfig {
+  url: string;
+  events: WebhookEvent[];
+  headers?: Record<string, string>;
 }
 
 // ─── Reports ─────────────────────────────────────────────
@@ -147,6 +191,7 @@ export interface TimesheetRow {
   human_equiv_hours: number;
   human_equiv_cost_saved: number;
   status: EntryStatus;
+  approved: boolean;
 }
 
 export interface TimesheetSummary {

@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "pre_user_prompt": [
+      {
+        "type": "command",
+        "command": "clawck hook start"
+      }
+    ],
+    "post_agent": [
+      {
+        "type": "command",
+        "command": "clawck hook stop"
+      }
+    ]
+  }
+}

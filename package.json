@@ -1,6 +1,6 @@
 {
   "name": "clawck",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "description": "⏱️🦀 Time tracking for AI agents. Toggl for the agentic era.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -37,17 +37,19 @@
   },
   "homepage": "https://clawck.dev",
   "dependencies": {
-    "chalk": "^5.3.0",
+    "better-sqlite3": "^12.6.2",
     "commander": "^12.0.0",
+    "pdfkit": "^0.15.0",
     "cors": "^2.8.5",
     "express": "^4.21.0",
-    "sql.js": "^1.11.0",
     "uuid": "^10.0.0"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "@types/cors": "^2.8.0",
     "@types/express": "^4.17.0",
     "@types/node": "^22.0.0",
+    "@types/pdfkit": "^0.13.0",
     "@types/supertest": "^7.2.0",
     "@types/uuid": "^10.0.0",
     "supertest": "^7.2.2",
@@ -60,6 +62,7 @@
   },
   "files": [
     "dist/",
+    "docs/",
     "README.md",
     "LICENSE"
   ]

@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "type": "command",
+        "command": "clawck hook start"
+      }
+    ],
+    "Stop": [
+      {
+        "type": "command",
+        "command": "clawck hook stop"
+      }
+    ]
+  }
+}

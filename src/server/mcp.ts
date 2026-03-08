@@ -11,14 +11,14 @@ import * as readline from 'readline';
 const TOOLS = [
   {
     name: 'clawck_start_task',
-    description: 'Start tracking time for a new task. Call this when beginning work on a task, project, or client deliverable. Returns the entry ID needed to stop the timer later.',
+    description: 'Clock yourself in — start tracking YOUR (the AI agent\'s) time on a task. Call this when you begin generating, reasoning, writing code, or taking actions for a task. Returns the entry ID needed to clock out later.',
     inputSchema: {
       type: 'object',
       properties: {
-        task: { type: 'string', description: 'What work is being done (e.g., "Research grant opportunities for NEA funding")' },
+        task: { type: 'string', description: 'What you (the AI agent) are working on (e.g., "Research grant opportunities for NEA funding")' },
         project: { type: 'string', description: 'Project name (e.g., "grant-research", "website-rebuild")' },
         client: { type: 'string', description: 'Client name (e.g., "acme-corp")' },
-        category: { type: 'string', enum: TASK_CATEGORIES, description: 'Type of work for human-equivalent time estimates' },
+        category: { type: 'string', enum: TASK_CATEGORIES, description: 'Type of work — used to estimate how long a human would take to do the same task' },
         agent: { type: 'string', description: 'Agent name/identifier' },
         model: { type: 'string', description: 'Model being used (e.g., "claude-sonnet-4-20250514")' },
         tags: { type: 'array', items: { type: 'string' }, description: 'Optional tags for filtering' },
@@ -28,7 +28,7 @@ const TOOLS = [
   },
   {
     name: 'clawck_stop_task',
-    description: 'Stop tracking time for a task. Call this when finished with a task. Provide the entry ID from clawck_start_task.',
+    description: 'Clock yourself out — stop tracking YOUR (the AI agent\'s) time on a task. Call this when you finish generating your response, complete your actions, or are done with the task. Provide the entry ID from clawck_start_task.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -45,12 +45,12 @@ const TOOLS = [
   },
   {
     name: 'clawck_log_task',
-    description: 'Log a completed task retroactively (when you forgot to start the timer). Provide the duration and details.',
+    description: 'Log your own completed work retroactively — use when you (the AI agent) did work but forgot to call clawck_start_task beforehand. Provide the duration of your computation/actions and details.',
     inputSchema: {
       type: 'object',
       properties: {
-        task: { type: 'string', description: 'What work was done' },
-        duration_minutes: { type: 'number', description: 'How long the task took in minutes' },
+        task: { type: 'string', description: 'What you (the AI agent) did' },
+        duration_minutes: { type: 'number', description: 'How long your (the AI agent\'s) work took in minutes' },
         project: { type: 'string', description: 'Project name' },
         client: { type: 'string', description: 'Client name' },
         category: { type: 'string', enum: TASK_CATEGORIES, description: 'Type of work' },
@@ -67,7 +67,7 @@ const TOOLS = [
   },
   {
     name: 'clawck_status',
-    description: 'Get currently running tasks and overall Clawck stats.',
+    description: 'Get your currently running time entries and overall Clawck stats. Shows what you (the AI agent) are clocked into right now.',
     inputSchema: {
       type: 'object',
       properties: {},
@@ -75,7 +75,7 @@ const TOOLS = [
   },
   {
     name: 'clawck_timesheet',
-    description: 'Get a timesheet summary for a date range. Shows agent hours, human equivalent hours, costs, and savings.',
+    description: 'Get a timesheet summary of AI agent work for a date range. Shows agent computation hours, human-equivalent hours, costs, and savings.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -85,6 +85,64 @@ const TOOLS = [
         project: { type: 'string', description: 'Filter by project' },
         agent: { type: 'string', description: 'Filter by agent' },
       },
+    },
+  },
+  {
+    name: 'clawck_get_entry',
+    description: 'Get a single time entry by ID.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Entry ID' },
+      },
+      required: ['id'],
+    },
+  },
+  {
+    name: 'clawck_query_entries',
+    description: 'Query time entries with filters. Returns up to `limit` entries (default 50).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        client: { type: 'string', description: 'Filter by client' },
+        project: { type: 'string', description: 'Filter by project' },
+        agent: { type: 'string', description: 'Filter by agent' },
+        status: { type: 'string', description: 'Filter by status (running, completed, failed, paused)' },
+        from: { type: 'string', description: 'Start date (ISO 8601)' },
+        to: { type: 'string', description: 'End date (ISO 8601)' },
+        limit: { type: 'number', description: 'Max entries to return (default 50)' },
+      },
+    },
+  },
+  {
+    name: 'clawck_update_entry',
+    description: 'Update fields on an existing time entry.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Entry ID to update' },
+        task: { type: 'string', description: 'Updated task description' },
+        project: { type: 'string', description: 'Updated project' },
+        client: { type: 'string', description: 'Updated client' },
+        status: { type: 'string', description: 'Updated status' },
+        summary: { type: 'string', description: 'Updated summary' },
+        tokens_in: { type: 'number', description: 'Updated input tokens' },
+        tokens_out: { type: 'number', description: 'Updated output tokens' },
+        cost_usd: { type: 'number', description: 'Updated cost' },
+        tags: { type: 'array', items: { type: 'string' }, description: 'Updated tags' },
+      },
+      required: ['id'],
+    },
+  },
+  {
+    name: 'clawck_list_metadata',
+    description: 'List unique clients, projects, or agents.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        type: { type: 'string', enum: ['clients', 'projects', 'agents'], description: 'Type of metadata to list' },
+      },
+      required: ['type'],
     },
   },
 ];
@@ -111,7 +169,28 @@ export async function startMCPServer(config: Partial<ClawckConfig> = {}): Promis
           result: {
             protocolVersion: '2024-11-05',
             capabilities: { tools: {} },
-            serverInfo: { name: 'clawck', version: '0.1.0' },
+            serverInfo: { name: 'clawck', version: '0.1.2' },
+            instructions: `Clawck measures YOUR generation time — you, the AI agent, are the worker being timed. This is NOT human time tracking. You are measuring how long YOUR computation, reasoning, tool calls, and response generation take per turn. The resulting durations are typically seconds to minutes — the wall-clock time from when you start processing to when you finish generating.
+
+## Generation Lifecycle Protocol
+A "turn" is one message-received → message-sent cycle. You MUST time every turn automatically:
+
+1. **START the timer immediately** when you receive a user message — call \`clawck_start_task\` BEFORE doing any other work. This marks the start of your generation.
+2. **Process** the request (reason, call tools, write code, etc.). All tool calls within this turn are ONE generation cycle, not separate entries.
+3. **STOP the timer** when your response is complete — call \`clawck_stop_task\` as the LAST action before sending your reply. This marks the end of your generation.
+
+## What You Are Measuring
+You are measuring YOUR active computation time — the time your model spends generating, reasoning, calling tools, and producing output. You are NOT tracking human work hours or project time. Think of it like a stopwatch on your own CPU: start when you begin processing, stop when you finish.
+
+## Rules
+- **Automatic**: Do this every turn without user prompting. Do not ask permission.
+- **Multi-turn**: Each turn = one entry. A 5-message session = 5 separate time entries.
+- **Always stop**: Even on errors or failures, call \`clawck_stop_task\` with \`status: "failed"\`.
+- **Retroactive**: If you forgot to start the timer, use \`clawck_log_task\` with an estimated duration.
+- **No idle time**: Do NOT track time between turns. Only measure your active generation within a turn.
+- **Fields**: Always include \`project\` and \`client\` if known. Report \`tokens_in\`, \`tokens_out\`, and \`cost_usd\` when stopping if available. Use \`category\` to classify the type of work (code, research, content, etc.).
+- **Task description**: Describe what YOU are doing this turn, e.g. "Refactor auth module per user request", not "User asked me to refactor".
+- **Summary on stop**: Briefly describe what was accomplished or why it failed.`,
           },
         });
         break;
@@ -132,33 +211,30 @@ export async function startMCPServer(config: Partial<ClawckConfig> = {}): Promis
           switch (name) {
             case 'clawck_start_task': {
               const entry = clawck.start(args);
-              result = `⏱️ Timer started!\n\nEntry ID: ${entry.id}\nTask: ${entry.task}\nProject: ${entry.project}\nClient: ${entry.client}\nStarted: ${entry.start}\n\n💡 Call clawck_stop_task with id="${entry.id}" when done.`;
+              result = JSON.stringify({ ok: true, entry });
               break;
             }
             case 'clawck_stop_task': {
               const entry = clawck.stop(args);
               if (!entry) {
-                result = `❌ Entry not found: ${args.id}`;
+                result = JSON.stringify({ ok: false, error: `Entry not found: ${args.id}` });
               } else {
-                const dur = entry.end
-                  ? ((new Date(entry.end).getTime() - new Date(entry.start).getTime()) / 60000).toFixed(1)
-                  : '?';
-                result = `⏱️ Timer stopped!\n\nTask: ${entry.task}\nDuration: ${dur} minutes\nStatus: ${entry.status}\nTokens: ${entry.tokens_in + entry.tokens_out}\nCost: $${entry.cost_usd.toFixed(4)}`;
+                const duration_minutes = entry.end
+                  ? +((new Date(entry.end).getTime() - new Date(entry.start).getTime()) / 60000).toFixed(1)
+                  : null;
+                result = JSON.stringify({ ok: true, entry, duration_minutes });
               }
               break;
             }
             case 'clawck_log_task': {
               const entry = clawck.log(args);
-              result = `📝 Task logged!\n\nEntry ID: ${entry.id}\nTask: ${entry.task}\nDuration: ${args.duration_minutes} minutes\nProject: ${entry.project}\nClient: ${entry.client}`;
+              result = JSON.stringify({ ok: true, entry });
               break;
             }
             case 'clawck_status': {
               const running = clawck.running();
               const stats = clawck.stats();
-              const runningList = running.length > 0
-                ? running.map(e => `  • ${e.task} (${e.project}/${e.client}) — started ${e.start}`).join('\n')
-                : '  No tasks running';
-              result = `🦀 Clawck Status\n\n📊 Total entries: ${stats.total_entries}\n🏃 Running: ${stats.running}\n👥 Clients: ${stats.clients}\n📁 Projects: ${stats.projects}\n🤖 Agents: ${stats.agents}\n\n⏱️ Running tasks:\n${runningList}`;
+              result = JSON.stringify({ ok: true, stats, running });
               break;
             }
             case 'clawck_timesheet': {
@@ -169,19 +245,49 @@ export async function startMCPServer(config: Partial<ClawckConfig> = {}): Promis
                 args.to || now.toISOString(),
                 { client: args.client, project: args.project, agent: args.agent }
               );
-              result = `📋 Timesheet (${ts.period_start.split('T')[0]} → ${ts.period_end.split('T')[0]})\n\n` +
-                `⏱️  Agent hours:     ${ts.total_agent_hours.toFixed(1)} hrs\n` +
-                `👤 Human equiv:     ${ts.total_human_equiv_hours.toFixed(1)} hrs\n` +
-                `💰 Agent cost:      $${ts.total_cost_usd.toFixed(2)}\n` +
-                `💚 Est. savings:    $${ts.total_savings_usd.toFixed(2)}\n` +
-                `🔢 Total entries:   ${ts.total_entries}\n` +
-                `🪙 Total tokens:    ${ts.total_tokens.toLocaleString()}\n\n` +
-                `📁 By Project:\n${ts.by_project.map(p => `  • ${p.project} (${p.client}): ${p.agent_hours.toFixed(1)}h agent → ${p.human_equiv_hours.toFixed(1)}h human equiv`).join('\n') || '  None'}\n\n` +
-                `🤖 By Agent:\n${ts.by_agent.map(a => `  • ${a.agent} (${a.model}): ${a.agent_hours.toFixed(1)}h, ${a.success_rate}% success`).join('\n') || '  None'}`;
+              result = JSON.stringify({ ok: true, timesheet: ts });
+              break;
+            }
+            case 'clawck_get_entry': {
+              const entry = clawck.get(args.id);
+              if (!entry) {
+                result = JSON.stringify({ ok: false, error: `Entry not found: ${args.id}` });
+              } else {
+                result = JSON.stringify({ ok: true, entry });
+              }
+              break;
+            }
+            case 'clawck_query_entries': {
+              const entries = clawck.query({
+                client: args.client,
+                project: args.project,
+                agent: args.agent,
+                status: args.status,
+                from: args.from,
+                to: args.to,
+                limit: args.limit ?? 50,
+              });
+              result = JSON.stringify({ ok: true, entries, count: entries.length });
+              break;
+            }
+            case 'clawck_update_entry': {
+              const { id, ...fields } = args;
+              const entry = clawck.update(id, fields);
+              if (!entry) {
+                result = JSON.stringify({ ok: false, error: `Entry not found: ${id}` });
+              } else {
+                result = JSON.stringify({ ok: true, entry });
+              }
+              break;
+            }
+            case 'clawck_list_metadata': {
+              const type = args.type as 'clients' | 'projects' | 'agents';
+              const values = clawck[type]();
+              result = JSON.stringify({ ok: true, type, values });
               break;
             }
             default:
-              result = `Unknown tool: ${name}`;
+              result = JSON.stringify({ ok: false, error: `Unknown tool: ${name}` });
           }
 
           send({
@@ -191,7 +297,7 @@ export async function startMCPServer(config: Partial<ClawckConfig> = {}): Promis
         } catch (err: any) {
           send({
             jsonrpc: '2.0', id,
-            result: { content: [{ type: 'text', text: `Error: ${err.message}` }], isError: true },
+            result: { content: [{ type: 'text', text: JSON.stringify({ ok: false, error: err.message }) }], isError: true },
           });
         }
         break;

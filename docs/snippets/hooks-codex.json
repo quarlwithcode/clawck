@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "turn-start": [
+      {
+        "type": "command",
+        "command": "clawck hook start"
+      }
+    ],
+    "agent-turn-complete": [
+      {
+        "type": "command",
+        "command": "clawck hook stop"
+      }
+    ]
+  }
+}

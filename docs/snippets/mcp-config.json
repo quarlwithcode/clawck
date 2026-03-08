@@ -1,0 +1,7 @@
+{
+  "clawck": {
+    "command": "npx",
+    "args": ["-y", "clawck", "mcp"],
+    "env": {}
+  }
+}

@@ -1,0 +1,17 @@
+## Per-Turn Generation Timing (Clawck)
+
+### On Message Received
+1. Call `clawck_start_task` with task description, project, client, and category.
+2. Store the returned entry ID for stopping the timer later.
+3. This marks the START of your generation — the moment you begin processing.
+
+### On Response Complete
+1. Call `clawck_stop_task` with the entry ID, status, summary, and token/cost data.
+2. This marks the END of your generation — the moment you finish producing output.
+3. This MUST happen even if the turn resulted in an error.
+
+### On Error
+1. Call `clawck_stop_task` with `status: "failed"` and a summary of what went wrong.
+
+### Missed Timer Start
+1. Call `clawck_log_task` with estimated `duration_minutes` and task details.

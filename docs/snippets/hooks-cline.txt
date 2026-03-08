@@ -1,0 +1,10 @@
+# Cline Hook Scripts
+# Place these as executable scripts in .clinerules/hooks/
+
+# --- .clinerules/hooks/TaskStart ---
+#!/bin/bash
+clawck hook start
+
+# --- .clinerules/hooks/PostToolUse ---
+#!/bin/bash
+clawck hook stop

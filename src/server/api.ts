@@ -29,7 +29,7 @@ export async function createServer(config: Partial<ClawckConfig> = {}): Promise<
   // ─── Health ─────────────────────────────────────────────
 
   app.get('/api/health', (_req, res) => {
-    res.json({ status: 'ok', version: '0.1.0', spec: '0.1.0' });
+    res.json({ status: 'ok', version: '0.1.3', spec: '0.1.0' });
   });
 
   app.get('/api/stats', (_req, res) => {
@@ -88,6 +88,18 @@ export async function createServer(config: Partial<ClawckConfig> = {}): Promise<
     const entry = clawck.get(req.params.id);
     if (!entry) return res.status(404).json({ error: 'Entry not found' });
     res.json(entry);
+  });
+
+  // ─── Approve Entry ───────────────────────────────────────
+
+  app.post('/api/entries/:id/approve', (req, res) => {
+    try {
+      const entry = clawck.approve(req.params.id);
+      if (!entry) return res.status(404).json({ error: 'Entry not found' });
+      res.json(entry);
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
   });
 
   // ─── Query Entries ─────────────────────────────────────
@@ -176,6 +188,11 @@ export async function createServer(config: Partial<ClawckConfig> = {}): Promise<
 
   // ─── Sync Status ──────────────────────────────────────
 
+  // Start idle monitor if webhooks configured
+  if (fullConfig.webhooks && fullConfig.webhooks.length > 0) {
+    clawck.webhooks.startIdleMonitor(clawck.database);
+  }
+
   let syncManager: SyncManager | null = null;
 
   if (fullConfig.remote_sources && fullConfig.remote_sources.length > 0) {
@@ -199,7 +216,7 @@ export async function createServer(config: Partial<ClawckConfig> = {}): Promise<
 
 export async function startServer(config: Partial<ClawckConfig> = {}): Promise<void> {
   const fullConfig = { ...DEFAULT_CONFIG, ...config };
-  const { app } = await createServer(config);
+  const { app } = await createServer(fullConfig);
   const port = fullConfig.port;
 
   app.listen(port, () => {

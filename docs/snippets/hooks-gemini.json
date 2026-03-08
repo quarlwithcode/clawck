@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "BeforeAgent": [
+      {
+        "type": "command",
+        "command": "clawck hook start"
+      }
+    ],
+    "AfterAgent": [
+      {
+        "type": "command",
+        "command": "clawck hook stop"
+      }
+    ]
+  }
+}

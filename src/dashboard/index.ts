@@ -3,8 +3,13 @@
  * Self-contained HTML dashboard served by the Clawck server.
  */
 
+let cachedHTML: string | null = null;
+let cachedPort: number | null = null;
+
 export function getDashboardHTML(port: number): string {
-  return `<!DOCTYPE html>
+  if (cachedHTML && cachedPort === port) return cachedHTML;
+  cachedPort = port;
+  cachedHTML = `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -626,4 +631,5 @@ setInterval(loadData, 30000); // Auto-refresh every 30s
 </script>
 </body>
 </html>`;
+  return cachedHTML;
 }
