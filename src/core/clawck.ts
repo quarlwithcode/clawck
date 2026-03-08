@@ -113,7 +113,7 @@ export class Clawck {
       const tokOut = input.tokens_out ?? existing?.tokens_out ?? 0;
       const model = existing?.model || 'unknown';
       if (tokIn > 0 || tokOut > 0) {
-        const estimated = estimateCost(model, tokIn, tokOut);
+        const estimated = estimateCost(model, tokIn, tokOut, true);
         if (estimated != null) {
           updates.cost_usd = Math.round(estimated * 10000) / 10000;
         }
