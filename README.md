@@ -26,6 +26,17 @@ clawck serve
 clawck report --format html
 ```
 
+## Documentation
+
+- [CHANGELOG.md](CHANGELOG.md) — Release notes for every version
+- [docs/api-reference.md](docs/api-reference.md) — Complete REST API and MCP tools reference
+- [docs/deployment.md](docs/deployment.md) — Running in production, backup and restore
+- [docs/migration-guide.md](docs/migration-guide.md) — Database migrations and upgrade steps
+- [docs/security.md](docs/security.md) — Security posture and hardening guidance
+- [docs/versioning.md](docs/versioning.md) — App, spec, and schema versioning policy
+- [docs/atp-spec-v0.2.md](docs/atp-spec-v0.2.md) — Agent Time Protocol specification
+- [docs/benchmarks-sources.md](docs/benchmarks-sources.md) — Industry benchmark data sources
+
 ## Features
 
 - **Time tracking** - Start/stop timers or log completed tasks retroactively
@@ -298,25 +309,86 @@ Edit `.clawck/config.json`:
 
 Config is validated on load. Invalid values produce clear error messages.
 
+## Surface Stability
+
+| Surface | Status | Notes |
+|---------|--------|-------|
+| CLI commands | **Stable** | 31 commands, flag signatures locked |
+| REST API | **Stable** | 26 endpoints, request/response shapes locked |
+| MCP tools | **Stable** | 9 tools, input schemas locked |
+| SQLite storage | **Stable** | Schema v5, migrations auto-applied |
+| ATP export/import | **Stable** | Spec v0.2.0 |
+| Webhooks | Experimental | Fire-and-forget, no retry/delivery guarantee |
+| Multi-agent sync | Experimental | Pull-mode only, no conflict resolution |
+| Pricing estimation | Experimental | Model pricing table manually maintained |
+
+**Planned (not started):** Python SDK, auto-instrumentation, email digest, OpenTelemetry exporter, embeddable widget.
+
 ## REST API
+
+26 endpoints. See [docs/api-reference.md](docs/api-reference.md) for full request/response details.
+
+**Health & Stats**
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/health` | Health check (version, spec) |
+| `GET` | `/api/stats` | Quick database statistics |
+
+**Time Tracking**
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `POST` | `/api/start` | Start tracking a task |
 | `POST` | `/api/stop` | Stop a running task |
 | `POST` | `/api/log` | Log a completed task retroactively |
-| `PATCH` | `/api/entries/:id` | Update an entry |
-| `POST` | `/api/entries/:id/approve` | Approve an entry |
+
+**Entries**
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
 | `GET` | `/api/entries` | Query entries (with filters) |
 | `GET` | `/api/entries/:id` | Get a single entry |
+| `PATCH` | `/api/entries/:id` | Update an entry |
+| `POST` | `/api/entries/:id/approve` | Approve an entry |
 | `GET` | `/api/running` | Get currently running tasks |
+
+**Reports & Timesheets**
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
 | `GET` | `/api/timesheet` | Get timesheet summary |
-| `GET` | `/api/clients` | List all clients |
-| `GET` | `/api/projects` | List all projects |
-| `GET` | `/api/agents` | List all agents |
-| `POST` | `/api/ingest` | Bulk import entries |
-| `GET` | `/api/health` | Health check |
-| `GET` | `/api/stats` | Quick stats |
+| `POST` | `/api/reports/generate` | Generate a report (terminal/HTML/PDF) |
+| `GET` | `/api/reports` | List saved reports |
+| `GET` | `/api/reports/:id` | Get a saved report |
+| `DELETE` | `/api/reports/:id` | Delete a saved report |
+
+**Baselines & Comparison**
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/baselines` | List personal baselines |
+| `POST` | `/api/baselines` | Create a personal baseline |
+| `DELETE` | `/api/baselines/:id` | Delete a baseline |
+| `GET` | `/api/compare/:entryId` | Compare entry against benchmarks |
+
+**Import/Export & Sync**
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/export/atp` | Export entries as ATP envelope |
+| `POST` | `/api/import/atp` | Import entries from ATP envelope |
+| `POST` | `/api/ingest` | Bulk import/merge entries |
+| `GET` | `/api/sync/status` | Get sync status for remote sources |
+| `POST` | `/api/sync/trigger` | Manually trigger sync |
+
+**Filter Options**
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/clients` | List distinct clients |
+| `GET` | `/api/projects` | List distinct projects |
+| `GET` | `/api/agents` | List distinct agents |
 
 ## Multi-Agent Aggregation
 
