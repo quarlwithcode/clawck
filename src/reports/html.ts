@@ -42,13 +42,13 @@ export function generateTimesheetHTML(
   }
 
   // Build CSV string (no wall clock)
-  const csvHeader = 'Date,Time,Agent,Client,Project,Task,Category,Runtime (min),Tokens,Cost,Human Equiv Hrs,Status,Approved';
+  const csvHeader = 'Date,Time,Agent,Client,Project,Task,Category,Runtime (min),Tokens In,Tokens Out,Cost,Human Equiv Hrs,Time Saved (hrs),Status,Approved';
   const csvRows = entries.map(e => {
     const esc = (s: string) => `"${s.replace(/"/g, '""')}"`;
     const time = formatTime(e.start_time);
     return [e.date, time, esc(e.agent), esc(e.client), esc(e.project), esc(e.task), e.category,
-      e.duration_minutes.toFixed(2), e.tokens_total, e.cost_usd.toFixed(4),
-      e.human_equiv_hours.toFixed(2), e.status, e.approved ? 'yes' : 'no'].join(',');
+      e.duration_minutes.toFixed(2), e.tokens_in, e.tokens_out, e.cost_usd.toFixed(4),
+      e.human_equiv_hours.toFixed(2), e.time_saved_hours.toFixed(2), e.status, e.approved ? 'yes' : 'no'].join(',');
   });
 
   // Calendar range
@@ -80,7 +80,8 @@ export function generateTimesheetHTML(
     task: e.task,
     category: e.category,
     duration: formatMins(e.duration_minutes),
-    tokens: e.tokens_total,
+    tokens_in: e.tokens_in,
+    tokens_out: e.tokens_out,
     cost: e.cost_usd.toFixed(4),
     status: e.status,
   })));
@@ -246,8 +247,9 @@ ${showCards ? `<div class="cards">
   <div class="card"><div class="card-label">Human Equiv</div><div class="card-value mono blue">${summary.total_human_equiv_hours.toFixed(2)} hrs</div></div>
   <div class="card"><div class="card-label">Cost</div><div class="card-value mono orange">$${summary.total_cost_usd.toFixed(2)}</div></div>
   <div class="card"><div class="card-label">Savings</div><div class="card-value mono green">$${summary.total_savings_usd.toFixed(0)}</div></div>
+  <div class="card"><div class="card-label">Time Saved</div><div class="card-value mono green">${summary.total_time_saved_hours.toFixed(1)} hrs</div></div>
   <div class="card"><div class="card-label">Entries</div><div class="card-value mono">${summary.total_entries}</div></div>
-  <div class="card"><div class="card-label">Tokens</div><div class="card-value mono">${summary.total_tokens.toLocaleString()}</div></div>
+  <div class="card"><div class="card-label">Tokens</div><div class="card-value mono">${summary.total_tokens.toLocaleString()} (${summary.total_tokens_in.toLocaleString()} in / ${summary.total_tokens_out.toLocaleString()} out)</div></div>
 </div>` : ''}
 
 ${isShort ? '' : `
@@ -279,16 +281,16 @@ ${showTable ? `<div id="tab-table" class="tab-content${!showCalendar ? ' active'
       <tr>
         <th data-col="0">Date</th><th data-col="1">Time</th><th data-col="2">Agent</th><th data-col="3">Client</th>
         <th data-col="4">Project</th><th data-col="5">Task</th><th data-col="6">Category</th>
-        <th data-col="7">Runtime</th><th data-col="8">Tokens</th><th data-col="9">Cost</th>
-        <th data-col="10">Human Equiv</th><th data-col="11">Status</th><th data-col="12">Approved</th>
+        <th data-col="7">Runtime</th><th data-col="8">Tokens In</th><th data-col="9">Tokens Out</th><th data-col="10">Cost</th>
+        <th data-col="11">Human Equiv</th><th data-col="12">Time Saved</th><th data-col="13">Status</th><th data-col="14">Approved</th>
       </tr>
     </thead>
     <tbody>
       ${entries.map(e => `<tr>
         <td class="mono">${e.date}</td><td class="mono">${formatTime(e.start_time)}</td><td>${escapeHtml(e.agent)}</td><td>${escapeHtml(e.client)}</td>
         <td>${escapeHtml(e.project)}</td><td title="${escapeHtml(e.task)}">${escapeHtml(e.task)}</td><td>${e.category}</td>
-        <td class="mono">${formatMins(e.duration_minutes)}</td><td class="mono">${e.tokens_total.toLocaleString()}</td>
-        <td class="mono">$${e.cost_usd.toFixed(4)}</td><td class="mono">${e.human_equiv_hours.toFixed(2)}h</td>
+        <td class="mono">${formatMins(e.duration_minutes)}</td><td class="mono">${e.tokens_in.toLocaleString()}</td><td class="mono">${e.tokens_out.toLocaleString()}</td>
+        <td class="mono">$${e.cost_usd.toFixed(4)}</td><td class="mono">${e.human_equiv_hours.toFixed(2)}h</td><td class="mono">${e.time_saved_hours.toFixed(2)}h</td>
         <td class="status-${e.status}">${e.status}</td><td>${e.approved ? 'Yes' : '-'}</td>
       </tr>`).join('\n')}
     </tbody>
@@ -417,8 +419,9 @@ function buildTextReport(summary: TimesheetSummary): string {
     `Human equiv:       ${summary.total_human_equiv_hours.toFixed(2)} hrs`,
     `Agent cost:        $${summary.total_cost_usd.toFixed(2)}`,
     `Est. savings:      $${summary.total_savings_usd.toFixed(0)}`,
+    `Time saved:        ${summary.total_time_saved_hours.toFixed(1)} hrs`,
     `Total entries:     ${summary.total_entries}`,
-    `Total tokens:      ${summary.total_tokens.toLocaleString()}`,
+    `Total tokens:      ${summary.total_tokens.toLocaleString()} (${summary.total_tokens_in.toLocaleString()} in / ${summary.total_tokens_out.toLocaleString()} out)`,
   ];
   return lines.join('\n');
 }
@@ -494,7 +497,7 @@ function buildTimeline(rawEntries: ClawckEntry[]): string {
   for (const date of sortedDates) {
     const dateEntries = byDate.get(date)!;
     // Sort by start time
-    dateEntries.sort((a, b) => a.start.localeCompare(b.start));
+    dateEntries.sort((a, b) => b.start.localeCompare(a.start));
 
     const dateLabel = new Date(date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
     const cards = dateEntries.map(e => {

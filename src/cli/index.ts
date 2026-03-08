@@ -241,8 +241,9 @@ const reportCmd = program
           console.log(`  👤 Human equiv:       ${ts.total_human_equiv_hours.toFixed(2)} hrs`);
           console.log(`  💰 Agent cost:        $${ts.total_cost_usd.toFixed(2)}`);
           console.log(`  💚 Est. savings:      $${ts.total_savings_usd.toFixed(0)}`);
+          console.log(`  ⏰ Time saved:        ${ts.total_time_saved_hours.toFixed(1)} hrs`);
           console.log(`  🔢 Total entries:     ${ts.total_entries}`);
-          console.log(`  🪙 Total tokens:      ${ts.total_tokens.toLocaleString()}`);
+          console.log(`  🪙 Total tokens:      ${ts.total_tokens.toLocaleString()} (${ts.total_tokens_in.toLocaleString()} in / ${ts.total_tokens_out.toLocaleString()} out)`);
           console.log('');
         } else {
           // full, text, visual, calendar all fall back to full terminal output
@@ -255,8 +256,9 @@ const reportCmd = program
           console.log(`  👤 Human equiv:       ${ts.total_human_equiv_hours.toFixed(2)} hrs`);
           console.log(`  💰 Agent cost:        $${ts.total_cost_usd.toFixed(2)}`);
           console.log(`  💚 Est. savings:      $${ts.total_savings_usd.toFixed(0)}`);
+          console.log(`  ⏰ Time saved:        ${ts.total_time_saved_hours.toFixed(1)} hrs`);
           console.log(`  🔢 Total entries:     ${ts.total_entries}`);
-          console.log(`  🪙 Total tokens:      ${ts.total_tokens.toLocaleString()}`);
+          console.log(`  🪙 Total tokens:      ${ts.total_tokens.toLocaleString()} (${ts.total_tokens_in.toLocaleString()} in / ${ts.total_tokens_out.toLocaleString()} out)`);
 
           if (ts.by_project.length > 0) {
             console.log(`\n  📁 By Project:`);

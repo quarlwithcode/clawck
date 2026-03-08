@@ -56,15 +56,15 @@ export function generateTimesheetPDF(
     doc.moveDown(0.3);
     doc.fontSize(10).font('Helvetica');
 
-    const totalAgentRuntimeMin = summary.entries.reduce((s, e) => s + (e.agent_runtime_minutes || 0), 0);
+    const totalRuntimeMin = summary.entries.reduce((s, e) => s + e.duration_minutes, 0);
     const stats = [
-      ['Wall-Clock Hours', `${summary.total_agent_hours.toFixed(2)} hrs`],
-      ['Agent Runtime (est.)', totalAgentRuntimeMin > 0 ? `${(totalAgentRuntimeMin / 60).toFixed(2)} hrs` : 'N/A'],
+      ['Runtime', `${(totalRuntimeMin / 60).toFixed(2)} hrs`],
       ['Human Equiv Hours', `${summary.total_human_equiv_hours.toFixed(2)} hrs`],
       ['Agent Cost', `$${summary.total_cost_usd.toFixed(2)}`],
       ['Est. Savings', `$${summary.total_savings_usd.toFixed(0)}`],
+      ['Time Saved', `${summary.total_time_saved_hours.toFixed(1)} hrs`],
       ['Total Entries', String(summary.total_entries)],
-      ['Total Tokens', summary.total_tokens.toLocaleString()],
+      ['Total Tokens', `${summary.total_tokens.toLocaleString()} (${summary.total_tokens_in.toLocaleString()} in / ${summary.total_tokens_out.toLocaleString()} out)`],
     ];
 
     for (const [label, value] of stats) {
