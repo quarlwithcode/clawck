@@ -5,6 +5,24 @@ All notable changes to Clawck are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Clawck uses [Semantic Versioning](https://semver.org/).
 
+## [0.5.1] - 2026-03-08
+
+### Fixed
+- Cost auto-estimation now uses Sonnet-class fallback pricing for unknown models instead of returning $0
+- Timeline entries within each date now sort newest-first (was oldest-first)
+
+### Added
+- **Time Saved** metric: `time_saved_hours` on `TimesheetRow`, `total_time_saved_hours` on `TimesheetSummary` — shows hours of human work avoided
+- **Token breakdown**: `tokens_in`/`tokens_out` on `TimesheetRow`, `total_tokens_in`/`total_tokens_out` on `TimesheetSummary`
+- Time Saved card in HTML reports
+- Token In/Out split columns in HTML table and CSV export
+- Time Saved and token breakdown in CLI report output and PDF reports
+- 14 new tests: savings accuracy, cost estimation fallback, HTML report assertions
+
+### Internal
+- Schema version: 5 (unchanged)
+- Spec version: 0.2.0 (unchanged)
+
 ## [0.5.0] - 2026-03-08
 
 ### Stabilization Release
