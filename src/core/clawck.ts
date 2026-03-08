@@ -119,6 +119,9 @@ export class Clawck {
           { tokens_out: tokensOut, model, tool_calls: toolCalls },
           runtimeConfig
         );
+      } else {
+        // No token data available (e.g. hook-based tracking) — wall clock is the best proxy
+        updates.agent_runtime_ms = updates.wall_clock_ms;
       }
     }
 
