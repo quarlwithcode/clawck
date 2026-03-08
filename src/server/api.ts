@@ -8,6 +8,7 @@ import cors from 'cors';
 import path from 'path';
 import { Clawck } from '../core/clawck';
 import { ClawckConfig, ClawckEntry, DEFAULT_CONFIG, SPEC_VERSION, APP_VERSION } from '../core/types';
+import { ClawckError } from '../core/errors';
 import { SyncManager } from '../core/sync';
 import { getDashboardHTML } from '../dashboard/index';
 import { exportATP, importATP } from '../core/atp';
@@ -374,6 +375,17 @@ export async function createServer(config: Partial<ClawckConfig> = {}): Promise<
     if (!syncManager) return res.status(400).json({ error: 'Sync not configured — no remote_sources defined' });
     const states = await syncManager.syncAll();
     res.json({ states });
+  });
+
+  // ─── Error Handler ──────────────────────────────────────
+  app.use((err: any, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (res.headersSent) return next(err);
+    if (err instanceof ClawckError) {
+      res.status(err.status).json({ error: err.message, code: err.code });
+    } else {
+      logger.error('api', 'Unhandled error', { error: err.message || String(err) });
+      res.status(500).json({ error: 'Internal server error' });
+    }
   });
 
   return { app, clawck, syncManager: syncManager ?? undefined };

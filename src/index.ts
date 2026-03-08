@@ -34,6 +34,7 @@ export { INDUSTRY_BENCHMARKS, lookupBenchmark, getCategoryMedian, computeIndustr
 export type { IndustryBenchmark } from './core/benchmarks';
 export { compareEntry } from './core/personal';
 export type { PersonalBaseline, PersonalComparisonResult } from './core/personal';
+export { ClawckError, ValidationError, NotFoundError, ConfigError } from './core/errors';
 export { validateConfig } from './core/config';
 export type { ConfigValidationResult } from './core/config';
 export { validateEntry, migrateV1toV2, exportATP, importATP } from './core/atp';
