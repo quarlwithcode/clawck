@@ -18,7 +18,7 @@ import fs from 'fs';
 import { startServer } from '../server/api';
 import { startMCPServer } from '../server/mcp';
 import { Clawck } from '../core/clawck';
-import { DEFAULT_CONFIG, ClawckConfig, ClawckEntry, DEFAULT_HUMAN_EQUIVALENTS, WebhookConfig, TrackingPattern, SPEC_VERSION } from '../core/types';
+import { DEFAULT_CONFIG, ClawckConfig, ClawckEntry, DEFAULT_HUMAN_EQUIVALENTS, WebhookConfig, TrackingPattern, SPEC_VERSION, APP_VERSION } from '../core/types';
 import { generateTimesheetPDF } from '../reports/pdf';
 import { generateTimesheetHTML } from '../reports/html';
 import { resolvePeriod } from '../reports/periods';
@@ -34,7 +34,7 @@ const program = new Command();
 program
   .name('clawck')
   .description('⏱️🦀 Clawck — Time tracking for AI agents')
-  .version('0.4.0')
+  .version(APP_VERSION)
   .enablePositionalOptions()
   .option('--json', 'Output as JSON (for scripting/pipelines)')
   .option('-d, --dir <path>', 'Data directory (also: CLAWCK_DIR env var)');
