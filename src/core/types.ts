@@ -101,7 +101,7 @@ export interface EntryComparison {
   industry_benchmark_minutes?: number;
   industry_source?: string;
   personal_benchmark_minutes?: number;
-  agent_runtime_minutes: number;
+  agent_total_runtime_minutes: number;
   wall_clock_minutes: number;
 }
 
@@ -232,7 +232,7 @@ export interface TimesheetRow {
   time_saved_hours: number;
   status: EntryStatus;
   approved: boolean;
-  agent_runtime_minutes?: number;
+  agent_total_runtime_minutes?: number;
   wall_clock_minutes?: number;
 }
 
@@ -253,6 +253,7 @@ export interface TimesheetSummary {
   by_project: ProjectSummary[];
   by_category: CategorySummary[];
   entries: TimesheetRow[];
+  total_agent_merged_runtime_hours: number;
   total_personal_equiv_hours?: number;
   total_personal_savings_usd?: number;
 }
@@ -362,7 +363,7 @@ export interface ClawckLogInput {
 // ─── Defaults ────────────────────────────────────────────
 
 export const SPEC_VERSION = '0.2.0';
-export const APP_VERSION = '0.5.1';
+export const APP_VERSION = '0.5.2';
 
 /**
  * Default human-equivalent multipliers.

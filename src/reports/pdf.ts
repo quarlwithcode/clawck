@@ -58,7 +58,8 @@ export function generateTimesheetPDF(
 
     const totalRuntimeMin = summary.entries.reduce((s, e) => s + e.duration_minutes, 0);
     const stats = [
-      ['Runtime', `${(totalRuntimeMin / 60).toFixed(2)} hrs`],
+      ['Total Runtime', `${(totalRuntimeMin / 60).toFixed(2)} hrs`],
+      ['Merged Runtime', `${summary.total_agent_merged_runtime_hours.toFixed(2)} hrs${summary.total_agent_merged_runtime_hours > 0 && summary.total_agent_merged_runtime_hours < summary.total_agent_hours ? ` (${(summary.total_agent_hours / summary.total_agent_merged_runtime_hours).toFixed(1)}x parallelization)` : ''}`],
       ['Human Equiv Hours', `${summary.total_human_equiv_hours.toFixed(2)} hrs`],
       ['Agent Cost', `$${summary.total_cost_usd.toFixed(2)}`],
       ['Est. Savings', `$${summary.total_savings_usd.toFixed(0)}`],

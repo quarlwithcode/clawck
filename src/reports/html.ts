@@ -42,7 +42,7 @@ export function generateTimesheetHTML(
   }
 
   // Build CSV string (no wall clock)
-  const csvHeader = 'Date,Time,Agent,Client,Project,Task,Category,Runtime (min),Tokens In,Tokens Out,Cost,Human Equiv Hrs,Time Saved (hrs),Status,Approved';
+  const csvHeader = 'Date,Time,Agent,Client,Project,Task,Category,Total Runtime (min),Tokens In,Tokens Out,Cost,Human Equiv Hrs,Time Saved (hrs),Status,Approved';
   const csvRows = entries.map(e => {
     const esc = (s: string) => `"${s.replace(/"/g, '""')}"`;
     const time = formatTime(e.start_time);
@@ -243,7 +243,8 @@ ${options.clientName ? `<div class="subtitle">Client: ${escapeHtml(options.clien
 
 ${isText ? `<pre class="csv-pre" style="margin-top:1.5rem">${escapeHtml(buildTextReport(summary))}</pre>` : `
 ${showCards ? `<div class="cards">
-  <div class="card"><div class="card-label">Runtime</div><div class="card-value mono accent">${formatMins(totalRuntimeMin)}</div></div>
+  <div class="card"><div class="card-label">Total Runtime</div><div class="card-value mono accent">${formatMins(totalRuntimeMin)}</div></div>
+  <div class="card"><div class="card-label">Merged Runtime</div><div class="card-value mono accent">${summary.total_agent_merged_runtime_hours.toFixed(2)} hrs${summary.total_agent_merged_runtime_hours > 0 && summary.total_agent_merged_runtime_hours < summary.total_agent_hours ? ` (${(summary.total_agent_hours / summary.total_agent_merged_runtime_hours).toFixed(1)}x)` : ''}</div></div>
   <div class="card"><div class="card-label">Human Equiv</div><div class="card-value mono blue">${summary.total_human_equiv_hours.toFixed(2)} hrs</div></div>
   <div class="card"><div class="card-label">Cost</div><div class="card-value mono orange">$${summary.total_cost_usd.toFixed(2)}</div></div>
   <div class="card"><div class="card-label">Savings</div><div class="card-value mono green">$${summary.total_savings_usd.toFixed(0)}</div></div>
@@ -415,7 +416,8 @@ function buildTextReport(summary: TimesheetSummary): string {
   const lines = [
     `Clawck Timesheet Report`,
     `${'─'.repeat(50)}`,
-    `Runtime:           ${formatMins(totalRuntimeMin)}`,
+    `Total runtime:     ${formatMins(totalRuntimeMin)}`,
+    `Merged runtime:    ${summary.total_agent_merged_runtime_hours.toFixed(2)} hrs${summary.total_agent_merged_runtime_hours > 0 && summary.total_agent_merged_runtime_hours < summary.total_agent_hours ? ` (${(summary.total_agent_hours / summary.total_agent_merged_runtime_hours).toFixed(1)}x parallelization)` : ''}`,
     `Human equiv:       ${summary.total_human_equiv_hours.toFixed(2)} hrs`,
     `Agent cost:        $${summary.total_cost_usd.toFixed(2)}`,
     `Est. savings:      $${summary.total_savings_usd.toFixed(0)}`,

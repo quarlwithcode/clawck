@@ -226,7 +226,7 @@ const reportCmd = program
         reportContent = JSON.stringify(ts);
         console.log(reportContent);
       } else {
-        const totalAgentRuntimeMin = ts.entries.reduce((s, r) => s + (r.agent_runtime_minutes || 0), 0);
+        const totalAgentRuntimeMin = ts.entries.reduce((s, r) => s + (r.agent_total_runtime_minutes || 0), 0);
 
         if (style === 'table') {
           const entries = clawck.query({ client: opts.client, project: opts.project, agent: opts.agent, from, to, limit: 500 });
@@ -234,9 +234,16 @@ const reportCmd = program
         } else if (style === 'short') {
           console.log(`\n  📋 Clawck Timesheet — ${periodLabel}`);
           console.log(`  ${'─'.repeat(50)}`);
-          console.log(`  ⏱️  Wall-clock hours:  ${ts.total_agent_hours.toFixed(2)} hrs`);
+          console.log(`  ⏱️  Total runtime:    ${ts.total_agent_hours.toFixed(2)} hrs`);
           if (totalAgentRuntimeMin > 0) {
             console.log(`  🤖 Agent runtime:     ${formatDuration(totalAgentRuntimeMin)} (estimated)`);
+          }
+          if (ts.total_agent_merged_runtime_hours > 0) {
+            const mergedLine = `  🔀 Merged runtime:    ${ts.total_agent_merged_runtime_hours.toFixed(2)} hrs`;
+            const parallelRatio = ts.total_agent_hours > 0 && ts.total_agent_merged_runtime_hours < ts.total_agent_hours
+              ? ` (${(ts.total_agent_hours / ts.total_agent_merged_runtime_hours).toFixed(1)}x parallelization)`
+              : '';
+            console.log(mergedLine + parallelRatio);
           }
           console.log(`  👤 Human equiv:       ${ts.total_human_equiv_hours.toFixed(2)} hrs`);
           console.log(`  💰 Agent cost:        $${ts.total_cost_usd.toFixed(2)}`);
@@ -249,9 +256,16 @@ const reportCmd = program
           // full, text, visual, calendar all fall back to full terminal output
           console.log(`\n  📋 Clawck Timesheet — ${periodLabel}`);
           console.log(`  ${'─'.repeat(50)}`);
-          console.log(`  ⏱️  Wall-clock hours:  ${ts.total_agent_hours.toFixed(2)} hrs`);
+          console.log(`  ⏱️  Total runtime:    ${ts.total_agent_hours.toFixed(2)} hrs`);
           if (totalAgentRuntimeMin > 0) {
             console.log(`  🤖 Agent runtime:     ${formatDuration(totalAgentRuntimeMin)} (estimated)`);
+          }
+          if (ts.total_agent_merged_runtime_hours > 0) {
+            const mergedLine = `  🔀 Merged runtime:    ${ts.total_agent_merged_runtime_hours.toFixed(2)} hrs`;
+            const parallelRatio = ts.total_agent_hours > 0 && ts.total_agent_merged_runtime_hours < ts.total_agent_hours
+              ? ` (${(ts.total_agent_hours / ts.total_agent_merged_runtime_hours).toFixed(1)}x parallelization)`
+              : '';
+            console.log(mergedLine + parallelRatio);
           }
           console.log(`  👤 Human equiv:       ${ts.total_human_equiv_hours.toFixed(2)} hrs`);
           console.log(`  💰 Agent cost:        $${ts.total_cost_usd.toFixed(2)}`);

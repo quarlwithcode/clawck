@@ -49,6 +49,7 @@ describe('PDF report generation', () => {
       { category: 'code', agent_hours: 8, human_equiv_hours: 48, cost_usd: 0.80, savings_usd: 3600, entries: 3 },
       { category: 'research', agent_hours: 4.5, human_equiv_hours: 54, cost_usd: 0.45, savings_usd: 2700, entries: 2 },
     ],
+    total_agent_merged_runtime_hours: 10,
     entries: [],
   };
 
@@ -98,6 +99,7 @@ describe('PDF report generation', () => {
       total_tokens_in: 0,
       total_tokens_out: 0,
       total_time_saved_hours: 0,
+      total_agent_merged_runtime_hours: 0,
       by_client: [],
       by_agent: [],
       by_project: [],

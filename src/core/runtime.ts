@@ -36,6 +36,41 @@ export function calculateWallClock(start: string, end: string): number {
   return new Date(end).getTime() - new Date(start).getTime();
 }
 
+/**
+ * Merge overlapping time intervals and return the total merged duration in ms.
+ * This reveals parallelization: if 3 agents run concurrently for 30min each,
+ * total runtime is 90min but merged runtime is 30min.
+ */
+export function computeMergedRuntimeMs(entries: Array<{ start: string; end: string | null }>): number {
+  if (entries.length === 0) return 0;
+
+  // Convert to [startMs, endMs] intervals
+  const intervals = entries.map(e => {
+    const startMs = new Date(e.start).getTime();
+    const endMs = e.end ? new Date(e.end).getTime() : Date.now();
+    return [startMs, endMs] as [number, number];
+  });
+
+  // Sort by start time
+  intervals.sort((a, b) => a[0] - b[0]);
+
+  // Merge overlapping intervals
+  const merged: [number, number][] = [intervals[0]];
+  for (let i = 1; i < intervals.length; i++) {
+    const last = merged[merged.length - 1];
+    const curr = intervals[i];
+    if (curr[0] <= last[1]) {
+      // Overlapping — extend the end
+      last[1] = Math.max(last[1], curr[1]);
+    } else {
+      merged.push(curr);
+    }
+  }
+
+  // Sum merged interval durations
+  return merged.reduce((sum, [start, end]) => sum + (end - start), 0);
+}
+
 function findModelSpeed(model: string, config: RuntimeEstimatorConfig): number {
   // Exact match first
   if (config.model_tokens_per_second[model]) {

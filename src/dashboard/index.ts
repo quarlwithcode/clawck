@@ -437,9 +437,9 @@ function render() {
   const statsHTML = \`
     <div class="stats-grid">
       <div class="stat-card">
-        <div class="stat-label">Agent Hours</div>
-        <div class="stat-value stat-accent">\${ts.total_agent_hours.toFixed(1)}</div>
-        <div class="stat-sub">\${ts.total_entries} entries</div>
+        <div class="stat-label">Total Runtime</div>
+        <div class="stat-value stat-accent">\${ts.total_agent_hours.toFixed(1)}h</div>
+        <div class="stat-sub">Merged: \${(ts.total_agent_merged_runtime_hours || 0).toFixed(1)}h\${ts.total_agent_merged_runtime_hours > 0 && ts.total_agent_merged_runtime_hours < ts.total_agent_hours ? ' (' + (ts.total_agent_hours / ts.total_agent_merged_runtime_hours).toFixed(1) + 'x parallel)' : ''}</div>
       </div>
       <div class="stat-card">
         <div class="stat-label">Human Equiv Hours</div>

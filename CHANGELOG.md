@@ -5,6 +5,19 @@ All notable changes to Clawck are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Clawck uses [Semantic Versioning](https://semver.org/).
 
+## [0.5.2] - 2026-03-08
+
+### Added
+- **Merged Runtime**: new `total_agent_merged_runtime_hours` on `TimesheetSummary` — merges overlapping time intervals to show wall-clock span vs additive total, revealing parallelization benefits
+- Parallelization ratio displayed in CLI, HTML, PDF, and dashboard when merged < total runtime
+- `computeMergedRuntimeMs()` utility in `src/core/runtime.ts` for interval merging
+
+### Changed
+- Renamed `agent_runtime_minutes` → `agent_total_runtime_minutes` on `TimesheetRow` and `EntryComparison`
+- Renamed "Wall-clock hours" → "Total runtime" and "Runtime" → "Total Runtime" across CLI, HTML reports, and PDF reports
+- CSV header "Runtime (min)" → "Total Runtime (min)"
+- Dashboard "Agent Hours" card now shows "Total Runtime" with merged runtime subtitle
+
 ## [0.5.1] - 2026-03-08
 
 ### Fixed

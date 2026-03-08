@@ -21,7 +21,7 @@ export interface EntryComparison {
   industry_benchmark_minutes?: number;
   industry_source?: string;
   personal_benchmark_minutes?: number;
-  agent_runtime_minutes: number;
+  agent_total_runtime_minutes: number;
   wall_clock_minutes: number;
 }
 
