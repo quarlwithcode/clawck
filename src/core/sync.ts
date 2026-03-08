@@ -4,6 +4,7 @@
 
 import { ClawckConfig, RemoteSource, SyncState, ClawckEntry } from './types';
 import { ClawckDB } from './database';
+import { logger } from './logger';
 
 export class SyncManager {
   private config: ClawckConfig;
@@ -68,6 +69,7 @@ export class SyncManager {
 
       const entries: ClawckEntry[] = await response.json() as ClawckEntry[];
       const count = this.db.bulkUpsert(entries);
+      logger.info('sync', `Synced ${count} entries from ${source.name}`);
 
       const state: SyncState = {
         source_name: source.name,
@@ -78,6 +80,7 @@ export class SyncManager {
       this.db.setSyncState(state);
       return state;
     } catch (err: any) {
+      logger.error('sync', `Sync failed for ${source.name}`, { error: err.message || String(err) });
       const state: SyncState = {
         source_name: source.name,
         last_sync_at: new Date().toISOString(),

@@ -5,6 +5,7 @@
 
 import { ClawckConfig, WebhookEvent, ClawckEntry } from './types';
 import { ClawckDB } from './database';
+import { logger } from './logger';
 
 export interface WebhookPayload {
   event: WebhookEvent;
@@ -44,8 +45,10 @@ export class WebhookManager {
         method: 'POST',
         headers,
         body: JSON.stringify(fullPayload),
-      }).catch(() => {
-        // fire-and-forget: silently ignore errors
+      }).then(() => {
+        logger.debug('webhooks', `Delivered ${event} to ${wh.url}`);
+      }).catch((err: Error) => {
+        logger.warn('webhooks', `Failed to deliver ${event} to ${wh.url}`, { error: err.message });
       });
     }
   }

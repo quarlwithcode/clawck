@@ -7,6 +7,7 @@ import { ClawckConfig } from '../core/types';
 import { Clawck } from '../core/clawck';
 import { HookContext } from './types';
 import { saveSession, loadSession, clearSession, cleanStaleSessions } from './session';
+import { logger } from '../core/logger';
 import fs from 'fs';
 import path from 'path';
 
@@ -43,7 +44,7 @@ export async function handleHookStart(config: ClawckConfig, context: HookContext
         session_id: context.session_id,
       });
 
-      process.stderr.write(`clawck: started ${entry.id.slice(0, 8)} (${context.platform})\n`);
+      logger.info('hooks', `Started ${entry.id.slice(0, 8)} (${context.platform})`);
 
       // Opportunistic cleanup of stale sessions
       cleanStaleSessions(config.data_dir);
@@ -52,7 +53,7 @@ export async function handleHookStart(config: ClawckConfig, context: HookContext
     }
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    process.stderr.write(`clawck: hook start error: ${msg}\n`);
+    logger.error('hooks', `Hook start error: ${msg}`);
     logError(config.data_dir, `start error: ${msg}`);
   }
 }
@@ -61,7 +62,7 @@ export async function handleHookStop(config: ClawckConfig, context: HookContext)
   try {
     const session = loadSession(config.data_dir, context.session_id);
     if (!session) {
-      process.stderr.write(`clawck: stop skipped — session already stopped or not started (expected if hooks fire multiple times per session)\n`);
+      logger.debug('hooks', 'Stop skipped — session already stopped or not started');
       return;
     }
 
@@ -73,6 +74,7 @@ export async function handleHookStop(config: ClawckConfig, context: HookContext)
         status: 'completed',
         tokens_in: context.tokens_in,
         tokens_out: context.tokens_out,
+        cost_usd: context.cost_usd,
         tool_calls: context.tool_calls,
       });
 
@@ -81,14 +83,14 @@ export async function handleHookStop(config: ClawckConfig, context: HookContext)
       if (entry && entry.end) {
         const durationMs = new Date(entry.end).getTime() - new Date(entry.start).getTime();
         const durationMin = (durationMs / 60000).toFixed(1);
-        process.stderr.write(`clawck: stopped ${entry.id.slice(0, 8)} (${durationMin}m)\n`);
+        logger.info('hooks', `Stopped ${entry.id.slice(0, 8)} (${durationMin}m)`);
       }
     } finally {
       clawck.close();
     }
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    process.stderr.write(`clawck: hook stop error: ${msg}\n`);
+    logger.error('hooks', `Hook stop error: ${msg}`);
     logError(config.data_dir, `stop error: ${msg}`);
   }
 }

@@ -16,6 +16,7 @@ import { resolvePeriod } from '../reports/periods';
 import { generateTimesheetHTML } from '../reports/html';
 import { generateTimesheetPDF } from '../reports/pdf';
 import { validateConfig } from '../core/config';
+import { logger } from '../core/logger';
 import fs from 'fs';
 import os from 'os';
 
@@ -384,10 +385,11 @@ export async function startServer(config: Partial<ClawckConfig> = {}): Promise<v
   const port = fullConfig.port;
 
   app.listen(port, () => {
-    console.log(`\n  ⏱️🦀 Clawck is running!`);
-    console.log(`  ├─ Dashboard:  http://localhost:${port}`);
-    console.log(`  ├─ API:        http://localhost:${port}/api`);
-    console.log(`  ├─ Data dir:   ${fullConfig.data_dir}`);
-    console.log(`  └─ Spec:       v${SPEC_VERSION}\n`);
+    logger.info('api', `Clawck is running on port ${port}`, {
+      dashboard: `http://localhost:${port}`,
+      api: `http://localhost:${port}/api`,
+      data_dir: fullConfig.data_dir,
+      spec: SPEC_VERSION,
+    });
   });
 }
