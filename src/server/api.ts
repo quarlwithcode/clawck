@@ -7,7 +7,7 @@ import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import { Clawck } from '../core/clawck';
-import { ClawckConfig, ClawckEntry, DEFAULT_CONFIG, SPEC_VERSION, APP_VERSION, ReportPeriod, ReportStyle, ReportFormat } from '../core/types';
+import { ClawckConfig, ClawckEntry, DEFAULT_CONFIG, SPEC_VERSION, APP_VERSION } from '../core/types';
 import { SyncManager } from '../core/sync';
 import { getDashboardHTML } from '../dashboard/index';
 import { exportATP, importATP } from '../core/atp';
@@ -183,7 +183,7 @@ export async function createServer(config: Partial<ClawckConfig> = {}): Promise<
           };
           clawck.upsert(entry);
           ingested++;
-        } catch (e) {
+        } catch {
           // Skip bad entries
         }
       }

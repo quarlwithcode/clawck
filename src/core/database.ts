@@ -5,7 +5,7 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
-import { ClawckEntry, TimesheetSummary, TimesheetRow, ClawckConfig, DEFAULT_HUMAN_EQUIVALENTS, ClientSummary, AgentSummary, ProjectSummary, CategorySummary, SyncState, TaskCategory, StoredReport, ReportMetadata, ReportPeriod, ReportStyle, ReportFormat } from './types';
+import { ClawckEntry, TimesheetSummary, TimesheetRow, ClawckConfig, DEFAULT_HUMAN_EQUIVALENTS, ClientSummary, ProjectSummary, CategorySummary, SyncState, TaskCategory, StoredReport, ReportMetadata, ReportPeriod, ReportStyle, ReportFormat } from './types';
 import { PersonalBaseline } from './personal';
 
 export class ClawckDB {
@@ -22,62 +22,159 @@ export class ClawckDB {
     this.migrate();
   }
 
+  // ─── Versioned Migration System ────────────────────────
+  //
+  // Each migration is a function that receives the db handle and runs DDL.
+  // Migrations are numbered starting at 1. The schema_version table tracks
+  // which migrations have been applied. On a fresh DB we detect the absence
+  // of any tables and run all migrations. On an existing pre-versioned DB
+  // (has entries table but no schema_version table) we detect already-applied
+  // columns and start from the right version.
+
+  /** Current schema version — bump when adding a new migration. */
+  static readonly SCHEMA_VERSION = 5;
+
+  private static readonly MIGRATIONS: Array<(db: Database.Database) => void> = [
+    // ── Migration 1: initial schema (entries + sync_state + indexes) ──
+    (db) => {
+      db.exec(`CREATE TABLE IF NOT EXISTS entries (
+        id TEXT PRIMARY KEY, agent TEXT NOT NULL, model TEXT NOT NULL DEFAULT 'unknown',
+        client TEXT NOT NULL DEFAULT 'default', project TEXT NOT NULL DEFAULT 'default',
+        task TEXT NOT NULL, category TEXT NOT NULL DEFAULT 'other', start TEXT NOT NULL,
+        end_ TEXT, status TEXT NOT NULL DEFAULT 'running', tokens_in INTEGER NOT NULL DEFAULT 0,
+        tokens_out INTEGER NOT NULL DEFAULT 0, cost_usd REAL NOT NULL DEFAULT 0,
+        tool_calls INTEGER NOT NULL DEFAULT 0, summary TEXT NOT NULL DEFAULT '',
+        tags TEXT NOT NULL DEFAULT '[]', source TEXT NOT NULL DEFAULT 'manual',
+        spec_version TEXT NOT NULL DEFAULT '0.1.0',
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_entries_agent ON entries(agent)`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_entries_client ON entries(client)`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_entries_project ON entries(project)`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_entries_status ON entries(status)`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_entries_start ON entries(start)`);
+      db.exec(`CREATE TABLE IF NOT EXISTS sync_state (
+        source_name TEXT PRIMARY KEY,
+        last_sync_at TEXT NOT NULL,
+        last_status TEXT NOT NULL DEFAULT 'success',
+        last_error TEXT,
+        entries_synced INTEGER NOT NULL DEFAULT 0
+      )`);
+    },
+
+    // ── Migration 2: add approved column ──
+    (db) => {
+      db.exec(`ALTER TABLE entries ADD COLUMN approved INTEGER NOT NULL DEFAULT 0`);
+    },
+
+    // ── Migration 3: add agent_runtime_ms and wall_clock_ms ──
+    (db) => {
+      db.exec(`ALTER TABLE entries ADD COLUMN agent_runtime_ms INTEGER`);
+      db.exec(`ALTER TABLE entries ADD COLUMN wall_clock_ms INTEGER`);
+    },
+
+    // ── Migration 4: personal baselines table ──
+    (db) => {
+      db.exec(`CREATE TABLE IF NOT EXISTS personal_baselines (
+        id TEXT PRIMARY KEY,
+        category TEXT NOT NULL,
+        task_type TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        my_minutes REAL NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`);
+    },
+
+    // ── Migration 5: reports table ──
+    (db) => {
+      db.exec(`CREATE TABLE IF NOT EXISTS reports (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL DEFAULT '',
+        period TEXT NOT NULL,
+        period_start TEXT NOT NULL,
+        period_end TEXT NOT NULL,
+        style TEXT NOT NULL DEFAULT 'full',
+        format TEXT NOT NULL DEFAULT 'terminal',
+        content BLOB,
+        metadata TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_reports_created ON reports(created_at)`);
+    },
+  ];
+
   private migrate(): void {
     this.db.pragma('journal_mode = WAL');
     this.db.pragma('synchronous = NORMAL');
-    this.db.exec(`CREATE TABLE IF NOT EXISTS entries (
-      id TEXT PRIMARY KEY, agent TEXT NOT NULL, model TEXT NOT NULL DEFAULT 'unknown',
-      client TEXT NOT NULL DEFAULT 'default', project TEXT NOT NULL DEFAULT 'default',
-      task TEXT NOT NULL, category TEXT NOT NULL DEFAULT 'other', start TEXT NOT NULL,
-      end_ TEXT, status TEXT NOT NULL DEFAULT 'running', tokens_in INTEGER NOT NULL DEFAULT 0,
-      tokens_out INTEGER NOT NULL DEFAULT 0, cost_usd REAL NOT NULL DEFAULT 0,
-      tool_calls INTEGER NOT NULL DEFAULT 0, summary TEXT NOT NULL DEFAULT '',
-      tags TEXT NOT NULL DEFAULT '[]', source TEXT NOT NULL DEFAULT 'manual',
-      spec_version TEXT NOT NULL DEFAULT '0.1.0',
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+
+    // Bootstrap the schema_version table
+    this.db.exec(`CREATE TABLE IF NOT EXISTS schema_version (
+      version INTEGER NOT NULL
     )`);
-    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_entries_agent ON entries(agent)`);
-    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_entries_client ON entries(client)`);
-    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_entries_project ON entries(project)`);
-    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_entries_status ON entries(status)`);
-    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_entries_start ON entries(start)`);
-    this.db.exec(`CREATE TABLE IF NOT EXISTS sync_state (
-      source_name TEXT PRIMARY KEY,
-      last_sync_at TEXT NOT NULL,
-      last_status TEXT NOT NULL DEFAULT 'success',
-      last_error TEXT,
-      entries_synced INTEGER NOT NULL DEFAULT 0
-    )`);
-    // Migration: add approved column
-    try { this.db.exec(`ALTER TABLE entries ADD COLUMN approved INTEGER NOT NULL DEFAULT 0`); } catch {}
-    // Migration: add agent_runtime_ms and wall_clock_ms columns
-    try { this.db.exec(`ALTER TABLE entries ADD COLUMN agent_runtime_ms INTEGER`); } catch {}
-    try { this.db.exec(`ALTER TABLE entries ADD COLUMN wall_clock_ms INTEGER`); } catch {}
-    // Migration: personal baselines table
-    this.db.exec(`CREATE TABLE IF NOT EXISTS personal_baselines (
-      id TEXT PRIMARY KEY,
-      category TEXT NOT NULL,
-      task_type TEXT NOT NULL,
-      description TEXT NOT NULL DEFAULT '',
-      my_minutes REAL NOT NULL,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-    )`);
-    // Migration: reports table
-    this.db.exec(`CREATE TABLE IF NOT EXISTS reports (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL DEFAULT '',
-      period TEXT NOT NULL,
-      period_start TEXT NOT NULL,
-      period_end TEXT NOT NULL,
-      style TEXT NOT NULL DEFAULT 'full',
-      format TEXT NOT NULL DEFAULT 'terminal',
-      content BLOB,
-      metadata TEXT NOT NULL DEFAULT '{}',
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    )`);
-    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_reports_created ON reports(created_at)`);
+
+    let currentVersion = this.getCurrentVersion();
+
+    // Detect pre-versioned databases: entries table exists but no schema_version row.
+    // Probe which columns/tables already exist to infer the correct starting version.
+    if (currentVersion === 0 && this.tableExists('entries')) {
+      currentVersion = this.detectLegacyVersion();
+      this.db.prepare('INSERT INTO schema_version (version) VALUES (?)').run(currentVersion);
+    } else if (currentVersion === 0) {
+      // Fresh database — seed version tracker at 0
+      this.db.prepare('INSERT INTO schema_version (version) VALUES (0)').run();
+    }
+
+    // Run pending migrations inside a transaction
+    if (currentVersion < ClawckDB.SCHEMA_VERSION) {
+      const runMigrations = this.db.transaction(() => {
+        for (let v = currentVersion + 1; v <= ClawckDB.SCHEMA_VERSION; v++) {
+          const migration = ClawckDB.MIGRATIONS[v - 1];
+          if (!migration) {
+            throw new Error(`Missing migration for version ${v}`);
+          }
+          migration(this.db);
+        }
+        this.db.prepare('UPDATE schema_version SET version = ?').run(ClawckDB.SCHEMA_VERSION);
+      });
+      runMigrations();
+    }
+  }
+
+  private getCurrentVersion(): number {
+    // If schema_version table was just created, it will be empty
+    const row = this.db.prepare('SELECT version FROM schema_version LIMIT 1').get() as { version: number } | undefined;
+    return row?.version ?? 0;
+  }
+
+  private tableExists(name: string): boolean {
+    const row = this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(name);
+    return !!row;
+  }
+
+  private columnExists(table: string, column: string): boolean {
+    const cols = this.db.pragma(`table_info(${table})`) as Array<{ name: string }>;
+    return cols.some(c => c.name === column);
+  }
+
+  /**
+   * For databases created before the versioned migration system existed,
+   * probe the schema to determine which migrations have already been applied.
+   */
+  private detectLegacyVersion(): number {
+    // Walk backwards from the latest migration to find the highest already-applied one
+    if (this.tableExists('reports')) return 5;
+    if (this.tableExists('personal_baselines')) return 4;
+    if (this.columnExists('entries', 'agent_runtime_ms')) return 3;
+    if (this.columnExists('entries', 'approved')) return 2;
+    // entries table exists but none of the later columns/tables → version 1
+    return 1;
+  }
+
+  /** Expose the current schema version for diagnostics. */
+  getSchemaVersion(): number {
+    return this.getCurrentVersion();
   }
 
   async ensureReady(): Promise<void> { /* better-sqlite3 is synchronous */ }
@@ -159,12 +256,15 @@ export class ClawckDB {
     const equivs = this.config.human_equivalents || DEFAULT_HUMAN_EQUIVALENTS;
     const rows: TimesheetRow[] = entries.map(e => {
       const wallClockMs = e.wall_clock_ms ?? (e.end ? (new Date(e.end).getTime() - new Date(e.start).getTime()) : (Date.now() - new Date(e.start).getTime()));
-      const durationMin = wallClockMs / 60000;
-      const agentRuntimeMin = e.agent_runtime_ms != null ? e.agent_runtime_ms / 60000 : undefined;
+      const agentRuntimeMs = e.agent_runtime_ms ?? null;
+      // Primary duration: agent_runtime_ms when available, fall back to wall_clock_ms, then computed
+      const primaryMs = agentRuntimeMs ?? wallClockMs;
+      const durationMin = primaryMs / 60000;
+      const agentRuntimeMin = agentRuntimeMs != null ? agentRuntimeMs / 60000 : undefined;
       const equiv = equivs[e.category] || equivs.other;
       const agentHours = durationMin / 60;
       const humanEquivHours = agentHours * equiv.multiplier;
-      return { date: e.start.split('T')[0], agent: e.agent, client: e.client, project: e.project, task: e.task, category: e.category, duration_minutes: Math.round(durationMin * 100) / 100, tokens_total: e.tokens_in + e.tokens_out, cost_usd: e.cost_usd, human_equiv_hours: Math.round(humanEquivHours * 100) / 100, human_equiv_cost_saved: Math.round(humanEquivHours * equiv.human_rate_usd * 100) / 100, status: e.status, approved: e.approved ?? false, agent_runtime_minutes: agentRuntimeMin != null ? Math.round(agentRuntimeMin * 100) / 100 : undefined, wall_clock_minutes: Math.round(durationMin * 100) / 100 };
+      return { date: e.start.split('T')[0], start_time: e.start, end_time: e.end, agent: e.agent, client: e.client, project: e.project, task: e.task, category: e.category, duration_minutes: Math.round(durationMin * 100) / 100, tokens_total: e.tokens_in + e.tokens_out, cost_usd: e.cost_usd, human_equiv_hours: Math.round(humanEquivHours * 100) / 100, human_equiv_cost_saved: Math.round(humanEquivHours * equiv.human_rate_usd * 100) / 100, status: e.status, approved: e.approved ?? false, agent_runtime_minutes: agentRuntimeMin != null ? Math.round(agentRuntimeMin * 100) / 100 : undefined, wall_clock_minutes: Math.round(wallClockMs / 60000 * 100) / 100 };
     });
     const totalAgentHours = rows.reduce((s, r) => s + r.duration_minutes / 60, 0);
     const totalHumanEquiv = rows.reduce((s, r) => s + r.human_equiv_hours, 0);

@@ -6,15 +6,16 @@
 import { v4 as uuid } from 'uuid';
 import {
   ClawckEntry, ClawckConfig, ClawckStartInput, ClawckStopInput, ClawckLogInput,
-  EntryStatus, TimesheetSummary, SPEC_VERSION, DEFAULT_CONFIG, TrackingPattern, TaskCategory,
+  TimesheetSummary, SPEC_VERSION, DEFAULT_CONFIG, TrackingPattern, TaskCategory,
   StoredReport, ReportMetadata, ReportPeriod, ReportStyle, ReportFormat,
 } from './types';
+import { estimateCost } from './pricing';
 import { ClawckDB } from './database';
 import { WebhookManager } from './webhooks';
 import { DEFAULT_PATTERNS } from './patterns';
 import { estimateAgentRuntime, calculateWallClock, DEFAULT_RUNTIME_CONFIG, RuntimeEstimatorConfig } from './runtime';
 import { PersonalBaseline, compareEntry, PersonalComparisonResult } from './personal';
-import { INDUSTRY_BENCHMARKS, IndustryBenchmark } from './benchmarks';
+import { INDUSTRY_BENCHMARKS } from './benchmarks';
 import { v4 as uuidv4 } from 'uuid';
 
 export class Clawck {
@@ -104,6 +105,20 @@ export class Clawck {
       cost_usd: input.cost_usd,
       tool_calls: input.tool_calls,
     };
+
+    // Cost estimation fallback: if no cost_usd provided but tokens exist, compute from pricing
+    if (updates.cost_usd == null || updates.cost_usd === 0) {
+      const existing = this._db.getById(input.id);
+      const tokIn = input.tokens_in ?? existing?.tokens_in ?? 0;
+      const tokOut = input.tokens_out ?? existing?.tokens_out ?? 0;
+      const model = existing?.model || 'unknown';
+      if (tokIn > 0 || tokOut > 0) {
+        const estimated = estimateCost(model, tokIn, tokOut);
+        if (estimated != null) {
+          updates.cost_usd = Math.round(estimated * 10000) / 10000;
+        }
+      }
+    }
 
     // Calculate wall clock and agent runtime
     const existing = this._db.getById(input.id);

@@ -338,7 +338,7 @@ You are measuring YOUR active computation time — the time your model spends ge
           try {
             const msg = JSON.parse(body);
             handleMessage(msg);
-          } catch (e) {
+          } catch {
             // Malformed JSON — skip
           }
         } else {
@@ -352,7 +352,7 @@ You are measuring YOUR active computation time — the time your model spends ge
           try {
             const msg = JSON.parse(l.trim());
             handleMessage(msg);
-          } catch (e) {
+          } catch {
             // Not JSON — skip
           }
         }

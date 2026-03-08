@@ -22,11 +22,11 @@ import { DEFAULT_CONFIG, ClawckConfig, ClawckEntry, DEFAULT_HUMAN_EQUIVALENTS, W
 import { generateTimesheetPDF } from '../reports/pdf';
 import { generateTimesheetHTML } from '../reports/html';
 import { resolvePeriod } from '../reports/periods';
-import { ReportStyle, ReportFormat, ReportPeriod, StoredReport } from '../core/types';
+import { ReportStyle, ReportFormat, ReportPeriod } from '../core/types';
 import { DEFAULT_PATTERNS } from '../core/patterns';
-import { readStdin, normalize, detectPlatform, handleHookStart, handleHookStop, PLATFORMS, PLATFORM_NAMES, Platform } from '../hooks';
-import { INDUSTRY_BENCHMARKS, lookupBenchmark } from '../core/benchmarks';
-import { exportATP, importATP } from '../core/atp';
+import { readStdin, normalize, handleHookStart, handleHookStop, PLATFORMS, PLATFORM_NAMES, Platform } from '../hooks';
+import { INDUSTRY_BENCHMARKS } from '../core/benchmarks';
+import { exportATP } from '../core/atp';
 import { TASK_CATEGORIES } from '../core/types';
 
 const program = new Command();
@@ -677,7 +677,7 @@ pattern
   .option('--description <text>', 'Pattern description')
   .action(async (opts) => {
     const dataDir = resolveDataDir(opts);
-    const config = loadConfig(dataDir);
+    loadConfig(dataDir);
     const configPath = path.join(path.resolve(dataDir), 'config.json');
 
     const newPattern: TrackingPattern = { name: opts.name };
@@ -1568,7 +1568,7 @@ function loadConfig(dir: string): ClawckConfig {
   if (fs.existsSync(configPath)) {
     try {
       fileConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-    } catch (e) {
+    } catch {
       // Ignore bad config
     }
   }

@@ -10,7 +10,7 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsx watch src/cli/index.ts",
-    "start": "node dist/cli/index.ts",
+    "start": "node dist/cli/index.js",
     "serve": "tsx src/cli/index.ts serve",
     "test": "vitest run",
     "lint": "eslint src/",
@@ -39,12 +39,13 @@
   "dependencies": {
     "better-sqlite3": "^12.6.2",
     "commander": "^12.0.0",
-    "pdfkit": "^0.15.0",
     "cors": "^2.8.5",
     "express": "^4.21.0",
+    "pdfkit": "^0.15.0",
     "uuid": "^10.0.0"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/better-sqlite3": "^7.6.13",
     "@types/cors": "^2.8.0",
     "@types/express": "^4.17.0",
@@ -52,9 +53,11 @@
     "@types/pdfkit": "^0.13.0",
     "@types/supertest": "^7.2.0",
     "@types/uuid": "^10.0.0",
+    "eslint": "^10.0.3",
     "supertest": "^7.2.2",
     "tsx": "^4.0.0",
     "typescript": "^5.6.0",
+    "typescript-eslint": "^8.56.1",
     "vitest": "^2.0.0"
   },
   "engines": {
