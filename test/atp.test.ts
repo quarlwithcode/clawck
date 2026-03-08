@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { validateEntry, migrateV1toV2, exportATP, importATP } from '../src/core/atp';
-import { SPEC_VERSION } from '../src/core/types';
+import { SPEC_VERSION, APP_VERSION } from '../src/core/types';
 import { makeEntry } from './helpers';
 
 describe('ATP Validation', () => {
@@ -87,7 +87,7 @@ describe('ATP Export/Import', () => {
     expect(envelope.atp_version).toBe(SPEC_VERSION);
     expect(envelope.generated_at).toBeTruthy();
     expect(envelope.source_tool).toBe('clawck');
-    expect(envelope.source_version).toBe('0.4.0');
+    expect(envelope.source_version).toBe(APP_VERSION);
     expect(envelope.entries).toHaveLength(2);
   });
 

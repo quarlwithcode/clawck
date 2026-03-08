@@ -18,13 +18,22 @@ import { generateTimesheetPDF } from '../reports/pdf';
 import fs from 'fs';
 import os from 'os';
 
+function safeInt(val: string | undefined, fallback: number): number {
+  if (!val) return fallback;
+  const n = parseInt(val, 10);
+  return Number.isNaN(n) ? fallback : n;
+}
+
 export async function createServer(config: Partial<ClawckConfig> = {}): Promise<{ app: express.Express; clawck: Clawck; syncManager?: SyncManager }> {
   const fullConfig = { ...DEFAULT_CONFIG, ...config };
   const clawck = await new Clawck(fullConfig).ready();
   const app = express();
 
-  app.use(cors());
-  app.use(express.json());
+  app.use(cors({
+    origin: fullConfig.cors_origin || true,
+    methods: ['GET', 'POST', 'PATCH', 'DELETE'],
+  }));
+  app.use(express.json({ limit: '1mb' }));
 
   // ─── Dashboard ──────────────────────────────────────────
 
@@ -120,7 +129,7 @@ export async function createServer(config: Partial<ClawckConfig> = {}): Promise<
       status: req.query.status as string,
       from: req.query.from as string,
       to: req.query.to as string,
-      limit: req.query.limit ? parseInt(req.query.limit as string) : undefined,
+      limit: req.query.limit ? safeInt(req.query.limit as string, 500) : undefined,
     });
     res.json(entries);
   });
@@ -159,7 +168,9 @@ export async function createServer(config: Partial<ClawckConfig> = {}): Promise<
     try {
       const entries = Array.isArray(req.body) ? req.body : [req.body];
       let ingested = 0;
-      for (const raw of entries) {
+      const errors: string[] = [];
+      for (let i = 0; i < entries.length; i++) {
+        const raw = entries[i];
         try {
           const entry: ClawckEntry = {
             id: raw.id,
@@ -183,11 +194,11 @@ export async function createServer(config: Partial<ClawckConfig> = {}): Promise<
           };
           clawck.upsert(entry);
           ingested++;
-        } catch {
-          // Skip bad entries
+        } catch (err: any) {
+          errors.push(`entry[${i}]: ${err.message || String(err)}`);
         }
       }
-      res.json({ ingested, total: entries.length });
+      res.json({ ingested, total: entries.length, ...(errors.length > 0 ? { errors } : {}) });
     } catch (err: any) {
       res.status(400).json({ error: err.message });
     }
@@ -243,13 +254,16 @@ export async function createServer(config: Partial<ClawckConfig> = {}): Promise<
     try {
       const entries = importATP(req.body);
       let ingested = 0;
-      for (const entry of entries) {
+      const errors: string[] = [];
+      for (let i = 0; i < entries.length; i++) {
         try {
-          clawck.upsert(entry);
+          clawck.upsert(entries[i]);
           ingested++;
-        } catch {}
+        } catch (err: any) {
+          errors.push(`entry[${i}]: ${err.message || String(err)}`);
+        }
       }
-      res.json({ ingested, total: entries.length });
+      res.json({ ingested, total: entries.length, ...(errors.length > 0 ? { errors } : {}) });
     } catch (err: any) {
       res.status(400).json({ error: err.message });
     }
@@ -312,8 +326,8 @@ export async function createServer(config: Partial<ClawckConfig> = {}): Promise<
   });
 
   app.get('/api/reports', (req, res) => {
-    const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
-    const offset = req.query.offset ? parseInt(req.query.offset as string) : 0;
+    const limit = safeInt(req.query.limit as string, 50);
+    const offset = safeInt(req.query.offset as string, 0);
     res.json(clawck.listReports(limit, offset));
   });
 

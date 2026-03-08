@@ -167,6 +167,9 @@ export interface ClawckConfig {
   /** Use industry benchmarks for human-equiv calculations (default: true) */
   use_industry_benchmarks?: boolean;
 
+  /** CORS origin(s) — true for all origins (default), string or string[] to restrict */
+  cors_origin?: string | string[] | boolean;
+
   /** Your personal hourly rate for savings calculations */
   personal_rate_usd?: number;
 }
@@ -212,6 +215,8 @@ export interface WebhookConfig {
 
 export interface TimesheetRow {
   date: string;
+  start_time: string;
+  end_time: string | null;
   agent: string;
   client: string;
   project: string;
