@@ -15,6 +15,7 @@ import { INDUSTRY_BENCHMARKS } from '../core/benchmarks';
 import { resolvePeriod } from '../reports/periods';
 import { generateTimesheetHTML } from '../reports/html';
 import { generateTimesheetPDF } from '../reports/pdf';
+import { validateConfig } from '../core/config';
 import fs from 'fs';
 import os from 'os';
 
@@ -26,6 +27,12 @@ function safeInt(val: string | undefined, fallback: number): number {
 
 export async function createServer(config: Partial<ClawckConfig> = {}): Promise<{ app: express.Express; clawck: Clawck; syncManager?: SyncManager }> {
   const fullConfig = { ...DEFAULT_CONFIG, ...config };
+
+  const validation = validateConfig(fullConfig as Record<string, any>);
+  if (!validation.valid) {
+    throw new Error(`Invalid config: ${validation.errors.join('; ')}`);
+  }
+
   const clawck = await new Clawck(fullConfig).ready();
   const app = express();
 

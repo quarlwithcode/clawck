@@ -18,7 +18,8 @@ import fs from 'fs';
 import { startServer } from '../server/api';
 import { startMCPServer } from '../server/mcp';
 import { Clawck } from '../core/clawck';
-import { DEFAULT_CONFIG, ClawckConfig, ClawckEntry, DEFAULT_HUMAN_EQUIVALENTS, WebhookConfig, TrackingPattern, SPEC_VERSION, APP_VERSION } from '../core/types';
+import { validateConfig } from '../core/config';
+import { DEFAULT_CONFIG, ClawckConfig, ClawckEntry, DEFAULT_HUMAN_EQUIVALENTS, TrackingPattern, SPEC_VERSION, APP_VERSION } from '../core/types';
 import { generateTimesheetPDF } from '../reports/pdf';
 import { generateTimesheetHTML } from '../reports/html';
 import { resolvePeriod } from '../reports/periods';
@@ -1573,45 +1574,13 @@ function loadConfig(dir: string): ClawckConfig {
     }
   }
 
-  // Validate key config fields
-  if (fileConfig.port !== undefined) {
-    if (typeof fileConfig.port !== 'number' || fileConfig.port < 1 || fileConfig.port > 65535) {
-      console.error(`  Config error: "port" must be a number between 1 and 65535 (got ${JSON.stringify(fileConfig.port)})`);
-      process.exit(1);
+  // Validate config fields
+  const validation = validateConfig(fileConfig as Record<string, any>);
+  if (!validation.valid) {
+    for (const err of validation.errors) {
+      console.error(`  Config error: ${err}`);
     }
-  }
-  if (fileConfig.human_equivalents !== undefined) {
-    if (typeof fileConfig.human_equivalents !== 'object' || fileConfig.human_equivalents === null) {
-      console.error('  Config error: "human_equivalents" must be an object');
-      process.exit(1);
-    }
-    for (const [key, val] of Object.entries(fileConfig.human_equivalents)) {
-      const v = val as any;
-      if (typeof v.multiplier !== 'number' || typeof v.human_rate_usd !== 'number') {
-        console.error(`  Config error: "human_equivalents.${key}" must have numeric "multiplier" and "human_rate_usd"`);
-        process.exit(1);
-      }
-    }
-  }
-  if (fileConfig.remote_sources !== undefined && !Array.isArray(fileConfig.remote_sources)) {
-    console.error('  Config error: "remote_sources" must be an array');
     process.exit(1);
-  }
-  if (fileConfig.webhooks !== undefined) {
-    if (!Array.isArray(fileConfig.webhooks)) {
-      console.error('  Config error: "webhooks" must be an array');
-      process.exit(1);
-    }
-    for (const [i, wh] of (fileConfig.webhooks as WebhookConfig[]).entries()) {
-      if (!wh.url || typeof wh.url !== 'string') {
-        console.error(`  Config error: "webhooks[${i}].url" must be a string`);
-        process.exit(1);
-      }
-      if (!Array.isArray(wh.events)) {
-        console.error(`  Config error: "webhooks[${i}].events" must be an array`);
-        process.exit(1);
-      }
-    }
   }
 
   return {
