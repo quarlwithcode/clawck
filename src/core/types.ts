@@ -223,10 +223,13 @@ export interface TimesheetRow {
   task: string;
   category: TaskCategory;
   duration_minutes: number;
+  tokens_in: number;
+  tokens_out: number;
   tokens_total: number;
   cost_usd: number;
   human_equiv_hours: number;
   human_equiv_cost_saved: number;
+  time_saved_hours: number;
   status: EntryStatus;
   approved: boolean;
   agent_runtime_minutes?: number;
@@ -242,6 +245,9 @@ export interface TimesheetSummary {
   total_cost_usd: number;
   total_savings_usd: number;
   total_tokens: number;
+  total_tokens_in: number;
+  total_tokens_out: number;
+  total_time_saved_hours: number;
   by_client: ClientSummary[];
   by_agent: AgentSummary[];
   by_project: ProjectSummary[];
@@ -356,7 +362,7 @@ export interface ClawckLogInput {
 // ─── Defaults ────────────────────────────────────────────
 
 export const SPEC_VERSION = '0.2.0';
-export const APP_VERSION = '0.5.0';
+export const APP_VERSION = '0.5.1';
 
 /**
  * Default human-equivalent multipliers.
