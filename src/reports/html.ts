@@ -3,13 +3,14 @@
  * Generates interactive timesheet HTML reports.
  */
 
-import { TimesheetSummary, ClawckEntry } from '../core/types';
+import { TimesheetSummary, ClawckEntry, ReportStyle } from '../core/types';
 
 export interface HTMLReportOptions {
   title?: string;
   clientName?: string;
   dateRange: string;
   rawEntries?: ClawckEntry[];
+  style?: ReportStyle;
 }
 
 export function generateTimesheetHTML(
@@ -19,6 +20,17 @@ export function generateTimesheetHTML(
   const title = options.title || 'Clawck Timesheet Report';
   const entries = summary.entries;
   const rawEntries = options.rawEntries || [];
+  const style: ReportStyle = options.style || 'full';
+
+  // Determine which sections to show based on style
+  const showCards = style !== 'table' && style !== 'calendar' && style !== 'visual';
+  const showCalendar = style === 'full' || style === 'visual' || style === 'calendar';
+  const showTable = style === 'full' || style === 'table';
+  const showGantt = style === 'full' || style === 'visual';
+  const showCSV = style === 'full';
+  const showTabs = [showCalendar, showTable, showGantt, showCSV].filter(Boolean).length > 1;
+  const isShort = style === 'short';
+  const isText = style === 'text';
 
   // Group entries by date for calendar
   const byDate = new Map<string, { count: number; hours: number }>();
@@ -157,62 +169,67 @@ ${options.clientName ? `<div class="subtitle">Client: ${escapeHtml(options.clien
 <div class="subtitle">Period: ${escapeHtml(options.dateRange)}</div>
 <div class="meta">Generated ${new Date().toISOString()}</div>
 
-<div class="cards">
-  <div class="card"><div class="card-label">Agent Hours</div><div class="card-value mono blue">${summary.total_agent_hours.toFixed(2)}</div></div>
+${isText ? `<pre class="csv-pre" style="margin-top:1.5rem">${escapeHtml(buildTextReport(summary))}</pre>` : `
+${showCards ? `<div class="cards">
+  <div class="card"><div class="card-label">Wall-Clock Hours</div><div class="card-value mono blue">${summary.total_agent_hours.toFixed(2)}</div></div>
+  <div class="card"><div class="card-label">Agent Runtime (est.)</div><div class="card-value mono" style="color:#22d3ee">${formatMins(entries.reduce((s, e) => s + (e.agent_runtime_minutes || 0), 0))}</div></div>
   <div class="card"><div class="card-label">Human Equiv</div><div class="card-value mono accent">${summary.total_human_equiv_hours.toFixed(2)} hrs</div></div>
   <div class="card"><div class="card-label">Cost</div><div class="card-value mono orange">$${summary.total_cost_usd.toFixed(2)}</div></div>
   <div class="card"><div class="card-label">Savings</div><div class="card-value mono green">$${summary.total_savings_usd.toFixed(0)}</div></div>
   <div class="card"><div class="card-label">Entries</div><div class="card-value mono">${summary.total_entries}</div></div>
   <div class="card"><div class="card-label">Tokens</div><div class="card-value mono">${summary.total_tokens.toLocaleString()}</div></div>
-</div>
+</div>` : ''}
 
-<div class="tabs">
-  <div class="tab active" data-tab="calendar">Calendar</div>
-  <div class="tab" data-tab="table">Table</div>
-  <div class="tab" data-tab="gantt">Gantt</div>
-  <div class="tab" data-tab="csv">CSV</div>
-</div>
+${isShort ? '' : `
+${showTabs ? `<div class="tabs">
+  ${showCalendar ? `<div class="tab${showCalendar && !showTable ? ' active' : (showCalendar ? ' active' : '')}" data-tab="calendar">Calendar</div>` : ''}
+  ${showTable ? `<div class="tab${!showCalendar ? ' active' : ''}" data-tab="table">Table</div>` : ''}
+  ${showGantt ? `<div class="tab" data-tab="gantt">Gantt</div>` : ''}
+  ${showCSV ? `<div class="tab" data-tab="csv">CSV</div>` : ''}
+</div>` : ''}
 
-<div id="tab-calendar" class="tab-content active">
+${showCalendar ? `<div id="tab-calendar" class="tab-content${showCalendar ? ' active' : ''}">
   <div class="calendar-grid">
     <div class="cal-header">Sun</div><div class="cal-header">Mon</div><div class="cal-header">Tue</div>
     <div class="cal-header">Wed</div><div class="cal-header">Thu</div><div class="cal-header">Fri</div><div class="cal-header">Sat</div>
     ${calendarDays}
   </div>
-</div>
+</div>` : ''}
 
-<div id="tab-table" class="tab-content">
+${showTable ? `<div id="tab-table" class="tab-content${!showCalendar ? ' active' : ''}">
   <table class="data-table" id="entries-table">
     <thead>
       <tr>
         <th data-col="0">Date</th><th data-col="1">Agent</th><th data-col="2">Client</th>
         <th data-col="3">Project</th><th data-col="4">Task</th><th data-col="5">Category</th>
-        <th data-col="6">Duration</th><th data-col="7">Tokens</th><th data-col="8">Cost</th>
-        <th data-col="9">Human Equiv</th><th data-col="10">Status</th><th data-col="11">Approved</th>
+        <th data-col="6">Wall Clock</th><th data-col="7">Agent Runtime</th><th data-col="8">Tokens</th><th data-col="9">Cost</th>
+        <th data-col="10">Human Equiv</th><th data-col="11">Status</th><th data-col="12">Approved</th>
       </tr>
     </thead>
     <tbody>
       ${entries.map(e => `<tr>
         <td class="mono">${e.date}</td><td>${escapeHtml(e.agent)}</td><td>${escapeHtml(e.client)}</td>
         <td>${escapeHtml(e.project)}</td><td title="${escapeHtml(e.task)}">${escapeHtml(e.task)}</td><td>${e.category}</td>
-        <td class="mono">${formatMins(e.duration_minutes)}</td><td class="mono">${e.tokens_total.toLocaleString()}</td>
+        <td class="mono">${formatMins(e.duration_minutes)}</td><td class="mono">${e.agent_runtime_minutes != null ? formatMins(e.agent_runtime_minutes) : '-'}</td><td class="mono">${e.tokens_total.toLocaleString()}</td>
         <td class="mono">$${e.cost_usd.toFixed(4)}</td><td class="mono">${e.human_equiv_hours.toFixed(2)}h</td>
         <td class="status-${e.status}">${e.status}</td><td>${e.approved ? 'Yes' : '-'}</td>
       </tr>`).join('\n')}
     </tbody>
   </table>
-</div>
+</div>` : ''}
 
-<div id="tab-gantt" class="tab-content">
+${showGantt ? `<div id="tab-gantt" class="tab-content">
   ${ganttHTML}
-</div>
+</div>` : ''}
 
-<div id="tab-csv" class="tab-content">
+${showCSV ? `<div id="tab-csv" class="tab-content">
   <div class="csv-container">
     <button class="copy-btn" onclick="copyCSV()">Copy</button>
     <pre class="csv-pre" id="csv-data">${escapeHtml([csvHeader, ...csvRows].join('\n'))}</pre>
   </div>
-</div>
+</div>` : ''}
+`}
+`}
 
 <script>
 // Tab switching
@@ -247,7 +264,9 @@ document.querySelectorAll('#entries-table th').forEach(th => {
 
 // Copy CSV
 function copyCSV() {
-  const text = document.getElementById('csv-data').textContent;
+  const el = document.getElementById('csv-data');
+  if (!el) return;
+  const text = el.textContent;
   navigator.clipboard.writeText(text).then(() => {
     const btn = document.querySelector('.copy-btn');
     btn.textContent = 'Copied!';
@@ -257,6 +276,22 @@ function copyCSV() {
 </script>
 </body>
 </html>`;
+}
+
+function buildTextReport(summary: TimesheetSummary): string {
+  const totalAgentRuntimeMin = summary.entries.reduce((s, e) => s + (e.agent_runtime_minutes || 0), 0);
+  const lines = [
+    `Clawck Timesheet Report`,
+    `${'─'.repeat(50)}`,
+    `Wall-clock hours:  ${summary.total_agent_hours.toFixed(2)} hrs`,
+    totalAgentRuntimeMin > 0 ? `Agent runtime:     ${formatMins(totalAgentRuntimeMin)} (estimated)` : null,
+    `Human equiv:       ${summary.total_human_equiv_hours.toFixed(2)} hrs`,
+    `Agent cost:        $${summary.total_cost_usd.toFixed(2)}`,
+    `Est. savings:      $${summary.total_savings_usd.toFixed(0)}`,
+    `Total entries:     ${summary.total_entries}`,
+    `Total tokens:      ${summary.total_tokens.toLocaleString()}`,
+  ].filter(Boolean);
+  return lines.join('\n');
 }
 
 function escapeHtml(str: string): string {

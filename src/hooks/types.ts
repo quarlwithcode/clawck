@@ -15,6 +15,9 @@ export interface HookContext {
   agent?: string;
   model?: string;
   cwd?: string;
+  tokens_in?: number;
+  tokens_out?: number;
+  tool_calls?: number;
   raw: unknown;
 }
 

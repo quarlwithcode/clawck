@@ -7,9 +7,16 @@ import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import { Clawck } from '../core/clawck';
-import { ClawckConfig, ClawckEntry, DEFAULT_CONFIG, SPEC_VERSION } from '../core/types';
+import { ClawckConfig, ClawckEntry, DEFAULT_CONFIG, SPEC_VERSION, APP_VERSION, ReportPeriod, ReportStyle, ReportFormat } from '../core/types';
 import { SyncManager } from '../core/sync';
 import { getDashboardHTML } from '../dashboard/index';
+import { exportATP, importATP } from '../core/atp';
+import { INDUSTRY_BENCHMARKS } from '../core/benchmarks';
+import { resolvePeriod } from '../reports/periods';
+import { generateTimesheetHTML } from '../reports/html';
+import { generateTimesheetPDF } from '../reports/pdf';
+import fs from 'fs';
+import os from 'os';
 
 export async function createServer(config: Partial<ClawckConfig> = {}): Promise<{ app: express.Express; clawck: Clawck; syncManager?: SyncManager }> {
   const fullConfig = { ...DEFAULT_CONFIG, ...config };
@@ -29,7 +36,7 @@ export async function createServer(config: Partial<ClawckConfig> = {}): Promise<
   // ─── Health ─────────────────────────────────────────────
 
   app.get('/api/health', (_req, res) => {
-    res.json({ status: 'ok', version: '0.1.3', spec: '0.1.0' });
+    res.json({ status: 'ok', version: APP_VERSION, spec: SPEC_VERSION });
   });
 
   app.get('/api/stats', (_req, res) => {
@@ -186,6 +193,142 @@ export async function createServer(config: Partial<ClawckConfig> = {}): Promise<
     }
   });
 
+  // ─── Personal Baselines ────────────────────────────────
+
+  app.get('/api/baselines', (_req, res) => {
+    res.json(clawck.getBaselines());
+  });
+
+  app.post('/api/baselines', (req, res) => {
+    try {
+      const { category, task_type, description, my_minutes } = req.body;
+      if (!category || !task_type || my_minutes === undefined) {
+        return res.status(400).json({ error: 'category, task_type, and my_minutes are required' });
+      }
+      const baseline = clawck.addBaseline({ category, task_type, description, my_minutes });
+      res.status(201).json(baseline);
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.delete('/api/baselines/:id', (req, res) => {
+    const deleted = clawck.removeBaseline(req.params.id);
+    if (!deleted) return res.status(404).json({ error: 'Baseline not found' });
+    res.json({ ok: true });
+  });
+
+  // ─── Compare ──────────────────────────────────────────
+
+  app.get('/api/compare/:entryId', (req, res) => {
+    const result = clawck.compareEntryById(req.params.entryId);
+    if (!result) return res.status(404).json({ error: 'Entry not found' });
+    res.json(result);
+  });
+
+  // ─── ATP Export/Import ────────────────────────────────
+
+  app.get('/api/export/atp', (req, res) => {
+    const now = new Date();
+    const weekAgo = new Date(now.getTime() - 7 * 24 * 3600000);
+    const from = (req.query.from as string) || weekAgo.toISOString();
+    const to = (req.query.to as string) || now.toISOString();
+    const entries = clawck.query({ from, to, limit: 10000 });
+    const baselines = clawck.getBaselines();
+    const envelope = exportATP(entries, INDUSTRY_BENCHMARKS, baselines);
+    res.json(envelope);
+  });
+
+  app.post('/api/import/atp', (req, res) => {
+    try {
+      const entries = importATP(req.body);
+      let ingested = 0;
+      for (const entry of entries) {
+        try {
+          clawck.upsert(entry);
+          ingested++;
+        } catch {}
+      }
+      res.json({ ingested, total: entries.length });
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  // ─── Reports ───────────────────────────────────────────
+
+  app.post('/api/reports/generate', async (req, res) => {
+    try {
+      const { period, from, to, days, style = 'full', format = 'terminal', filters = {}, name, save } = req.body;
+      const resolved = resolvePeriod({ period, from, to, days });
+      const ts = clawck.timesheet(resolved.from, resolved.to, filters);
+      const dateRange = `${resolved.from.split('T')[0]} to ${resolved.to.split('T')[0]}`;
+
+      let content: string;
+      if (format === 'html') {
+        const rawEntries = clawck.query({ ...filters, from: resolved.from, to: resolved.to, limit: 10000 });
+        content = generateTimesheetHTML(ts, { dateRange, clientName: filters.client, rawEntries, style });
+      } else if (format === 'pdf') {
+        const tmpPath = path.join(os.tmpdir(), `clawck-report-${Date.now()}.pdf`);
+        await generateTimesheetPDF(ts, { dateRange, clientName: filters.client, outputPath: tmpPath, style });
+        const pdfBuf = fs.readFileSync(tmpPath);
+        fs.unlinkSync(tmpPath);
+        if (!save) {
+          res.setHeader('Content-Type', 'application/pdf');
+          res.send(pdfBuf);
+          return;
+        }
+        content = pdfBuf.toString('base64');
+      } else {
+        content = JSON.stringify(ts);
+      }
+
+      const metadata = {
+        filters,
+        total_entries: ts.total_entries,
+        total_agent_hours: ts.total_agent_hours,
+        total_cost_usd: ts.total_cost_usd,
+        total_savings_usd: ts.total_savings_usd,
+      };
+
+      if (save) {
+        const saved = clawck.saveReport({
+          name: name || `Report ${new Date().toISOString().split('T')[0]}`,
+          period: resolved.period,
+          period_start: resolved.from,
+          period_end: resolved.to,
+          style,
+          format,
+          content,
+          metadata,
+        });
+        res.json({ id: saved.id, content, metadata });
+      } else {
+        res.json({ content, metadata });
+      }
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/reports', (req, res) => {
+    const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
+    const offset = req.query.offset ? parseInt(req.query.offset as string) : 0;
+    res.json(clawck.listReports(limit, offset));
+  });
+
+  app.get('/api/reports/:id', (req, res) => {
+    const report = clawck.getReport(req.params.id);
+    if (!report) return res.status(404).json({ error: 'Report not found' });
+    res.json(report);
+  });
+
+  app.delete('/api/reports/:id', (req, res) => {
+    const deleted = clawck.deleteReport(req.params.id);
+    if (!deleted) return res.status(404).json({ error: 'Report not found' });
+    res.json({ ok: true });
+  });
+
   // ─── Sync Status ──────────────────────────────────────
 
   // Start idle monitor if webhooks configured
@@ -224,6 +367,6 @@ export async function startServer(config: Partial<ClawckConfig> = {}): Promise<v
     console.log(`  ├─ Dashboard:  http://localhost:${port}`);
     console.log(`  ├─ API:        http://localhost:${port}/api`);
     console.log(`  ├─ Data dir:   ${fullConfig.data_dir}`);
-    console.log(`  └─ Spec:       v${fullConfig.port ? '0.1.0' : '0.1.0'}\n`);
+    console.log(`  └─ Spec:       v${SPEC_VERSION}\n`);
   });
 }

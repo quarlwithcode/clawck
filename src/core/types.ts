@@ -25,7 +25,7 @@ export interface ClawckEntry {
   /** Globally unique entry ID (UUID v4) */
   id: string;
 
-  /** Agent identifier (e.g., "cubi-research-01") */
+  /** Agent identifier (e.g., "research-agent-01") */
   agent: string;
 
   /** LLM model used (e.g., "claude-sonnet-4-20250514") */
@@ -84,6 +84,25 @@ export interface ClawckEntry {
 
   /** Whether this entry has been approved */
   approved?: boolean;
+
+  /** Estimated agent processing time in milliseconds */
+  agent_runtime_ms?: number | null;
+
+  /** Total wall-clock elapsed time in milliseconds */
+  wall_clock_ms?: number | null;
+
+  /** Embedded comparison data */
+  comparison?: EntryComparison;
+}
+
+// ─── Comparison ─────────────────────────────────────────
+
+export interface EntryComparison {
+  industry_benchmark_minutes?: number;
+  industry_source?: string;
+  personal_benchmark_minutes?: number;
+  agent_runtime_minutes: number;
+  wall_clock_minutes: number;
 }
 
 // ─── Configuration ───────────────────────────────────────
@@ -137,6 +156,19 @@ export interface ClawckConfig {
 
   /** Default pattern name to use when none specified */
   default_pattern?: string;
+
+  /** Runtime estimation overrides */
+  runtime_estimation?: {
+    model_tokens_per_second?: Record<string, number>;
+    default_tokens_per_second?: number;
+    avg_tool_duration_ms?: number;
+  };
+
+  /** Use industry benchmarks for human-equiv calculations (default: true) */
+  use_industry_benchmarks?: boolean;
+
+  /** Your personal hourly rate for savings calculations */
+  personal_rate_usd?: number;
 }
 
 export interface RemoteSource {
@@ -192,6 +224,8 @@ export interface TimesheetRow {
   human_equiv_cost_saved: number;
   status: EntryStatus;
   approved: boolean;
+  agent_runtime_minutes?: number;
+  wall_clock_minutes?: number;
 }
 
 export interface TimesheetSummary {
@@ -208,6 +242,8 @@ export interface TimesheetSummary {
   by_project: ProjectSummary[];
   by_category: CategorySummary[];
   entries: TimesheetRow[];
+  total_personal_equiv_hours?: number;
+  total_personal_savings_usd?: number;
 }
 
 export interface ClientSummary {
@@ -245,6 +281,33 @@ export interface CategorySummary {
   cost_usd: number;
   savings_usd: number;
   entries: number;
+}
+
+// ─── Report System ──────────────────────────────────────
+
+export type ReportPeriod = 'day' | 'week' | 'month' | 'year' | 'custom';
+export type ReportStyle = 'full' | 'short' | 'visual' | 'text' | 'table' | 'calendar';
+export type ReportFormat = 'terminal' | 'pdf' | 'html';
+
+export interface StoredReport {
+  id: string;
+  name: string;
+  period: ReportPeriod;
+  period_start: string;
+  period_end: string;
+  style: ReportStyle;
+  format: ReportFormat;
+  content: string | Buffer;
+  metadata: ReportMetadata;
+  created_at: string;
+}
+
+export interface ReportMetadata {
+  filters?: { client?: string; project?: string; agent?: string };
+  total_entries: number;
+  total_agent_hours: number;
+  total_cost_usd: number;
+  total_savings_usd: number;
 }
 
 // ─── MCP Tool Definitions ────────────────────────────────
@@ -287,8 +350,15 @@ export interface ClawckLogInput {
 
 // ─── Defaults ────────────────────────────────────────────
 
-export const SPEC_VERSION = '0.1.0';
+export const SPEC_VERSION = '0.2.0';
+export const APP_VERSION = '0.4.0';
 
+/**
+ * Default human-equivalent multipliers.
+ * These are configurable starting estimates, NOT researched benchmarks.
+ * Override per-category in config.json under "human_equivalents".
+ * See docs/benchmarks-sources.md for industry time data you can use to calibrate.
+ */
 export const DEFAULT_HUMAN_EQUIVALENTS: Record<TaskCategory, HumanEquivalent> = {
   research:       { multiplier: 12, human_rate_usd: 50 },
   content:        { multiplier: 10, human_rate_usd: 45 },

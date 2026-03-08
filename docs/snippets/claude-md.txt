@@ -1,14 +1,23 @@
 ## Generation Time Tracking (Clawck)
 
-You have Clawck time tracking tools via MCP. Clawck measures YOUR generation time — how long your computation, reasoning, tool calls, and response generation take. This is NOT human time tracking. You are timing your own AI processing, like a stopwatch on your own CPU.
+If you have Clawck hooks configured (UserPromptSubmit/Stop), your generation time is tracked automatically — no action needed on your part.
 
-You MUST time every turn automatically:
+You also have Clawck MCP tools available for explicit control. Use these when you want to:
+- Set a more descriptive task name than the auto-captured prompt
+- Add specific project/client/category metadata
+- Log a retroactive entry with `clawck_log_task`
 
-1. **Start of every turn**: Call `clawck_start_task` IMMEDIATELY when you receive a message, BEFORE doing any other work. This marks the start of your generation.
-2. **End of every turn**: Call `clawck_stop_task` as the LAST action before sending your reply. This marks the end of your generation.
-3. **Every turn**: Each user message = one generation cycle. A 5-message conversation = 5 time entries.
-4. **Errors**: Always stop the timer even on failure — use `status: "failed"`.
-5. **Forgot to start?** Use `clawck_log_task` with an estimated duration.
+### Available MCP Tools
+- `clawck_start_task` — Start a timer (overrides the hook's auto-start for this turn)
+- `clawck_stop_task` — Stop a timer with status and summary
+- `clawck_log_task` — Log a completed task retroactively
+- `clawck_status` — Check running tasks
+- `clawck_timesheet` — Get timesheet summary
+
+### When to use MCP tools explicitly
+- You do NOT need to call start/stop every turn if hooks are active
+- Use them when you have better context about what the task actually is
+- Always include project/client/category when you have that context
 
 ### Field Guidelines
 - `task`: Describe what YOU are doing (e.g., "Refactor auth module"), not what the user asked.

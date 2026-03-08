@@ -61,7 +61,7 @@ export async function handleHookStop(config: ClawckConfig, context: HookContext)
   try {
     const session = loadSession(config.data_dir, context.session_id);
     if (!session) {
-      process.stderr.write(`clawck: no session for ${context.session_id} — skipping stop\n`);
+      process.stderr.write(`clawck: stop skipped — session already stopped or not started (expected if hooks fire multiple times per session)\n`);
       return;
     }
 
@@ -71,6 +71,9 @@ export async function handleHookStop(config: ClawckConfig, context: HookContext)
       const entry = clawck.stop({
         id: session.entry_id,
         status: 'completed',
+        tokens_in: context.tokens_in,
+        tokens_out: context.tokens_out,
+        tool_calls: context.tool_calls,
       });
 
       clearSession(config.data_dir, context.session_id);

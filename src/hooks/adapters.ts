@@ -29,6 +29,9 @@ function normalizeClaude(json: Record<string, unknown>): HookContext {
     agent: 'claude-code',
     model: str(json.model),
     cwd: str(json.cwd),
+    tokens_in: num(json.tokens_in),
+    tokens_out: num(json.tokens_out),
+    tool_calls: num(json.tool_calls) ?? num(json.num_tool_calls),
     raw: json,
   };
 }
@@ -45,6 +48,9 @@ function normalizeGemini(json: Record<string, unknown>): HookContext {
     agent: 'gemini-cli',
     model: str(json.model) || str(ctx?.model),
     cwd: str(json.cwd) || str(ctx?.cwd),
+    tokens_in: num(json.tokens_in),
+    tokens_out: num(json.tokens_out),
+    tool_calls: num(json.tool_calls),
     raw: json,
   };
 }
@@ -120,6 +126,9 @@ function normalizeUnknown(json: Record<string, unknown>): HookContext {
     agent: str(json.agent) || 'unknown',
     model: str(json.model),
     cwd: str(json.cwd),
+    tokens_in: num(json.tokens_in),
+    tokens_out: num(json.tokens_out),
+    tool_calls: num(json.tool_calls),
     raw: json,
   };
 }
@@ -145,5 +154,10 @@ export function normalize(json: Record<string, unknown>, platform?: Platform): H
 
 function str(val: unknown): string | undefined {
   if (typeof val === 'string' && val.length > 0) return val;
+  return undefined;
+}
+
+function num(val: unknown): number | undefined {
+  if (typeof val === 'number' && !isNaN(val)) return val;
   return undefined;
 }

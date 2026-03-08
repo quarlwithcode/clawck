@@ -1,4 +1,4 @@
-# Clawck v0.3
+# Clawck v0.4
 
 **Time tracking for AI agents. Toggl for the agentic era.**
 
@@ -46,20 +46,44 @@ clawck report --format html
 
 ### 1. Agents clock in and out
 
-**Via MCP (Claude Code, Cline, Cursor, Windsurf):**
+**Via platform hooks (recommended — Claude Code, Cursor, Gemini, Windsurf, Codex):**
 
-Add to your MCP config (`~/.claude/mcp_servers.json` or similar):
+Hooks fire automatically on every turn — no agent cooperation needed.
+
+Claude Code — add to `~/.claude/settings.json`:
 
 ```json
 {
-  "clawck": {
-    "command": "npx",
-    "args": ["-y", "clawck", "mcp"]
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          { "type": "command", "command": "clawck hook start" }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "clawck hook stop" }
+        ]
+      }
+    ]
   }
 }
 ```
 
-Your agent gets: `clawck_start_task`, `clawck_stop_task`, `clawck_log_task`, `clawck_status`, `clawck_timesheet`.
+Or run `clawck hooks install claude` for the full config.
+
+**Via MCP (optional — for explicit agent control):**
+
+Add to `~/.claude/mcp_servers.json` (or equivalent for Cline, Cursor, Windsurf):
+
+```json
+{ "clawck": { "command": "npx", "args": ["-y", "clawck", "mcp"] } }
+```
+
+This gives agents `clawck_start_task`, `clawck_stop_task`, etc. for granular control. Add CLAUDE.md instructions (run `clawck setup claude`) to tell the agent to use them.
 
 **Via REST API:**
 
@@ -67,7 +91,7 @@ Your agent gets: `clawck_start_task`, `clawck_stop_task`, `clawck_log_task`, `cl
 # Start a task
 curl -X POST http://localhost:3456/api/start \
   -H "Content-Type: application/json" \
-  -d '{"task": "Research grant opportunities", "project": "grant-research", "client": "acme-corp", "category": "research", "agent": "cubi-research-01"}'
+  -d '{"task": "Research grant opportunities", "project": "grant-research", "client": "acme-corp", "category": "research", "agent": "research-agent-01"}'
 
 # Stop a task
 curl -X POST http://localhost:3456/api/stop \
@@ -104,6 +128,11 @@ Every entry has a **category** and Clawck applies configurable multipliers:
 | Other | 8x | $50/hr |
 
 30 minutes of agent research = **6 hours human-equivalent** = **$300 estimated value**.
+
+> **Note:** These multipliers are configurable starting estimates. They represent
+> roughly how many hours of equivalent human work one hour of agent work produces
+> for each category. Adjust them based on your team's actual experience.
+> See `docs/benchmarks-sources.md` for industry timing data to help calibrate.
 
 ### 3. View results
 
@@ -239,7 +268,7 @@ Edit `.clawck/config.json`:
   "port": 3456,
   "default_client": "acme-corp",
   "default_project": "general",
-  "default_agent": "cubi-01",
+  "default_agent": "agent-01",
   "default_model": "claude-sonnet-4-20250514",
   "default_source": "clawck",
   "default_pattern": "default",
@@ -298,8 +327,8 @@ Running agents across multiple machines? Clawck merges them:
 ```json
 {
   "remote_sources": [
-    { "name": "research-agent", "url": "http://cubi-01:3456/api/entries" },
-    { "name": "writer-agent", "url": "http://cubi-02:3456/api/entries" }
+    { "name": "research-agent", "url": "http://agent-01:3456/api/entries" },
+    { "name": "writer-agent", "url": "http://agent-02:3456/api/entries" }
   ],
   "sync_interval": 60
 }
@@ -310,7 +339,7 @@ Running agents across multiple machines? Clawck merges them:
 ```bash
 curl -X POST http://central-clawck:3456/api/ingest \
   -H "Content-Type: application/json" \
-  -d '[{"task": "...", "agent": "cubi-01", ...}]'
+  -d '[{"task": "...", "agent": "agent-01", ...}]'
 ```
 
 Entries merge by UUID - no conflicts, no duplicates.
@@ -340,12 +369,12 @@ clawck/
 
 ## Integrations
 
-**Claude Code** - Add to `~/.claude/mcp_servers.json`:
+**Platform hooks (recommended)** - Auto-track via `clawck hooks install claude|cursor|cline|windsurf|gemini|codex`
+
+**Claude Code MCP** - Add to `~/.claude/mcp_servers.json` for explicit agent control:
 ```json
 { "clawck": { "command": "npx", "args": ["-y", "clawck", "mcp"] } }
 ```
-
-**Platform hooks** - Auto-track via `clawck hooks install claude|cursor|cline|windsurf|gemini|codex`
 
 **n8n** - POST to `/api/start` and `/api/stop` from HTTP Request nodes.
 

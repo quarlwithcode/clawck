@@ -34,14 +34,22 @@ export const PLATFORMS: Record<Exclude<Platform, 'unknown'>, PlatformInstallInfo
       hooks: {
         UserPromptSubmit: [
           {
-            type: "command",
-            command: "clawck hook start"
+            hooks: [
+              {
+                type: "command",
+                command: "clawck hook start"
+              }
+            ]
           }
         ],
         Stop: [
           {
-            type: "command",
-            command: "clawck hook stop"
+            hooks: [
+              {
+                type: "command",
+                command: "clawck hook stop"
+              }
+            ]
           }
         ]
       }

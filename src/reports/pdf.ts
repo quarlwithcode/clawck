@@ -5,13 +5,14 @@
 
 import PDFDocument from 'pdfkit';
 import fs from 'fs';
-import { TimesheetSummary } from '../core/types';
+import { TimesheetSummary, ReportStyle } from '../core/types';
 
 export interface PDFReportOptions {
   title?: string;
   clientName?: string;
   dateRange: string;
   outputPath: string;
+  style?: ReportStyle;
 }
 
 export function generateTimesheetPDF(
@@ -27,6 +28,10 @@ export function generateTimesheetPDF(
     doc.pipe(stream);
 
     const pageWidth = doc.page.width - 100; // margins
+    const style: ReportStyle = options.style || 'full';
+    const showSummary = style !== 'table';
+    const showBreakdowns = style === 'full' || style === 'visual' || style === 'calendar' || style === 'text';
+    const showEntryDetails = style === 'full' || style === 'table' || style === 'visual' || style === 'calendar' || style === 'text';
 
     // ─── Header ──────────────────────────────────────────
     doc.fontSize(22).font('Helvetica-Bold')
@@ -46,12 +51,15 @@ export function generateTimesheetPDF(
     doc.moveDown(0.5);
 
     // ─── Summary Stats ──────────────────────────────────
+    if (showSummary) {
     doc.fontSize(14).font('Helvetica-Bold').text('Summary');
     doc.moveDown(0.3);
     doc.fontSize(10).font('Helvetica');
 
+    const totalAgentRuntimeMin = summary.entries.reduce((s, e) => s + (e.agent_runtime_minutes || 0), 0);
     const stats = [
-      ['Agent Hours', `${summary.total_agent_hours.toFixed(2)} hrs`],
+      ['Wall-Clock Hours', `${summary.total_agent_hours.toFixed(2)} hrs`],
+      ['Agent Runtime (est.)', totalAgentRuntimeMin > 0 ? `${(totalAgentRuntimeMin / 60).toFixed(2)} hrs` : 'N/A'],
       ['Human Equiv Hours', `${summary.total_human_equiv_hours.toFixed(2)} hrs`],
       ['Agent Cost', `$${summary.total_cost_usd.toFixed(2)}`],
       ['Est. Savings', `$${summary.total_savings_usd.toFixed(0)}`],
@@ -63,9 +71,10 @@ export function generateTimesheetPDF(
       doc.text(`${label}: ${value}`);
     }
     doc.moveDown(1);
+    }
 
     // ─── By Project ─────────────────────────────────────
-    if (summary.by_project.length > 0) {
+    if (showBreakdowns && summary.by_project.length > 0) {
       doc.fontSize(14).font('Helvetica-Bold').text('By Project');
       doc.moveDown(0.3);
 
@@ -84,7 +93,7 @@ export function generateTimesheetPDF(
     }
 
     // ─── By Agent ───────────────────────────────────────
-    if (summary.by_agent.length > 0) {
+    if (showBreakdowns && summary.by_agent.length > 0) {
       checkPageBreak(doc);
       doc.fontSize(14).font('Helvetica-Bold').text('By Agent');
       doc.moveDown(0.3);
@@ -103,7 +112,7 @@ export function generateTimesheetPDF(
     }
 
     // ─── By Category ────────────────────────────────────
-    if (summary.by_category.length > 0) {
+    if (showBreakdowns && summary.by_category.length > 0) {
       checkPageBreak(doc);
       doc.fontSize(14).font('Helvetica-Bold').text('By Category');
       doc.moveDown(0.3);
@@ -123,7 +132,7 @@ export function generateTimesheetPDF(
     }
 
     // ─── Entry Details ─────────────────────────────────────
-    if (summary.entries.length > 0) {
+    if (showEntryDetails && summary.entries.length > 0) {
       checkPageBreak(doc);
       doc.fontSize(14).font('Helvetica-Bold').fillColor('#000000').text('Entry Details');
       doc.moveDown(0.3);

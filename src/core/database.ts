@@ -5,7 +5,8 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
-import { ClawckEntry, TimesheetSummary, TimesheetRow, ClawckConfig, DEFAULT_HUMAN_EQUIVALENTS, ClientSummary, AgentSummary, ProjectSummary, CategorySummary, SyncState } from './types';
+import { ClawckEntry, TimesheetSummary, TimesheetRow, ClawckConfig, DEFAULT_HUMAN_EQUIVALENTS, ClientSummary, AgentSummary, ProjectSummary, CategorySummary, SyncState, TaskCategory, StoredReport, ReportMetadata, ReportPeriod, ReportStyle, ReportFormat } from './types';
+import { PersonalBaseline } from './personal';
 
 export class ClawckDB {
   private db: Database.Database;
@@ -50,14 +51,41 @@ export class ClawckDB {
     )`);
     // Migration: add approved column
     try { this.db.exec(`ALTER TABLE entries ADD COLUMN approved INTEGER NOT NULL DEFAULT 0`); } catch {}
+    // Migration: add agent_runtime_ms and wall_clock_ms columns
+    try { this.db.exec(`ALTER TABLE entries ADD COLUMN agent_runtime_ms INTEGER`); } catch {}
+    try { this.db.exec(`ALTER TABLE entries ADD COLUMN wall_clock_ms INTEGER`); } catch {}
+    // Migration: personal baselines table
+    this.db.exec(`CREATE TABLE IF NOT EXISTS personal_baselines (
+      id TEXT PRIMARY KEY,
+      category TEXT NOT NULL,
+      task_type TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      my_minutes REAL NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )`);
+    // Migration: reports table
+    this.db.exec(`CREATE TABLE IF NOT EXISTS reports (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL DEFAULT '',
+      period TEXT NOT NULL,
+      period_start TEXT NOT NULL,
+      period_end TEXT NOT NULL,
+      style TEXT NOT NULL DEFAULT 'full',
+      format TEXT NOT NULL DEFAULT 'terminal',
+      content BLOB,
+      metadata TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )`);
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_reports_created ON reports(created_at)`);
   }
 
   async ensureReady(): Promise<void> { /* better-sqlite3 is synchronous */ }
 
   insert(entry: ClawckEntry): ClawckEntry {
     this.db.prepare(
-      `INSERT INTO entries (id, agent, model, client, project, task, category, start, end_, status, tokens_in, tokens_out, cost_usd, tool_calls, summary, tags, source, spec_version, approved) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
-    ).run(entry.id, entry.agent, entry.model, entry.client, entry.project, entry.task, entry.category, entry.start, entry.end, entry.status, entry.tokens_in, entry.tokens_out, entry.cost_usd, entry.tool_calls, entry.summary, JSON.stringify(entry.tags), entry.source, entry.spec_version, entry.approved ? 1 : 0);
+      `INSERT INTO entries (id, agent, model, client, project, task, category, start, end_, status, tokens_in, tokens_out, cost_usd, tool_calls, summary, tags, source, spec_version, approved, agent_runtime_ms, wall_clock_ms) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+    ).run(entry.id, entry.agent, entry.model, entry.client, entry.project, entry.task, entry.category, entry.start, entry.end, entry.status, entry.tokens_in, entry.tokens_out, entry.cost_usd, entry.tool_calls, entry.summary, JSON.stringify(entry.tags), entry.source, entry.spec_version, entry.approved ? 1 : 0, entry.agent_runtime_ms ?? null, entry.wall_clock_ms ?? null);
     return entry;
   }
 
@@ -80,6 +108,8 @@ export class ClawckDB {
     if (updates.task !== undefined) { fields.push('task = ?'); values.push(updates.task); }
     if (updates.agent !== undefined) { fields.push('agent = ?'); values.push(updates.agent); }
     if (updates.approved !== undefined) { fields.push('approved = ?'); values.push(updates.approved ? 1 : 0); }
+    if (updates.agent_runtime_ms !== undefined) { fields.push('agent_runtime_ms = ?'); values.push(updates.agent_runtime_ms); }
+    if (updates.wall_clock_ms !== undefined) { fields.push('wall_clock_ms = ?'); values.push(updates.wall_clock_ms); }
     fields.push("updated_at = datetime('now')");
     if (fields.length === 1) return existing;
     values.push(id);
@@ -128,11 +158,13 @@ export class ClawckDB {
     const entries = this.query({ ...filters, from, to, limit: 10000 });
     const equivs = this.config.human_equivalents || DEFAULT_HUMAN_EQUIVALENTS;
     const rows: TimesheetRow[] = entries.map(e => {
-      const durationMin = e.end ? (new Date(e.end).getTime() - new Date(e.start).getTime()) / 60000 : (Date.now() - new Date(e.start).getTime()) / 60000;
+      const wallClockMs = e.wall_clock_ms ?? (e.end ? (new Date(e.end).getTime() - new Date(e.start).getTime()) : (Date.now() - new Date(e.start).getTime()));
+      const durationMin = wallClockMs / 60000;
+      const agentRuntimeMin = e.agent_runtime_ms != null ? e.agent_runtime_ms / 60000 : undefined;
       const equiv = equivs[e.category] || equivs.other;
       const agentHours = durationMin / 60;
       const humanEquivHours = agentHours * equiv.multiplier;
-      return { date: e.start.split('T')[0], agent: e.agent, client: e.client, project: e.project, task: e.task, category: e.category, duration_minutes: Math.round(durationMin * 100) / 100, tokens_total: e.tokens_in + e.tokens_out, cost_usd: e.cost_usd, human_equiv_hours: Math.round(humanEquivHours * 100) / 100, human_equiv_cost_saved: Math.round(humanEquivHours * equiv.human_rate_usd * 100) / 100, status: e.status, approved: e.approved ?? false };
+      return { date: e.start.split('T')[0], agent: e.agent, client: e.client, project: e.project, task: e.task, category: e.category, duration_minutes: Math.round(durationMin * 100) / 100, tokens_total: e.tokens_in + e.tokens_out, cost_usd: e.cost_usd, human_equiv_hours: Math.round(humanEquivHours * 100) / 100, human_equiv_cost_saved: Math.round(humanEquivHours * equiv.human_rate_usd * 100) / 100, status: e.status, approved: e.approved ?? false, agent_runtime_minutes: agentRuntimeMin != null ? Math.round(agentRuntimeMin * 100) / 100 : undefined, wall_clock_minutes: Math.round(durationMin * 100) / 100 };
     });
     const totalAgentHours = rows.reduce((s, r) => s + r.duration_minutes / 60, 0);
     const totalHumanEquiv = rows.reduce((s, r) => s + r.human_equiv_hours, 0);
@@ -179,23 +211,23 @@ export class ClawckDB {
   }
 
   private rowToEntry(row: any): ClawckEntry {
-    return { id: row.id, agent: row.agent, model: row.model, client: row.client, project: row.project, task: row.task, category: row.category, start: row.start, end: row.end_, status: row.status, tokens_in: row.tokens_in, tokens_out: row.tokens_out, cost_usd: row.cost_usd, tool_calls: row.tool_calls, summary: row.summary, tags: JSON.parse(row.tags || '[]'), source: row.source, spec_version: row.spec_version, created_at: row.created_at, updated_at: row.updated_at, approved: !!row.approved };
+    return { id: row.id, agent: row.agent, model: row.model, client: row.client, project: row.project, task: row.task, category: row.category, start: row.start, end: row.end_, status: row.status, tokens_in: row.tokens_in, tokens_out: row.tokens_out, cost_usd: row.cost_usd, tool_calls: row.tool_calls, summary: row.summary, tags: JSON.parse(row.tags || '[]'), source: row.source, spec_version: row.spec_version, created_at: row.created_at, updated_at: row.updated_at, approved: !!row.approved, agent_runtime_ms: row.agent_runtime_ms ?? null, wall_clock_ms: row.wall_clock_ms ?? null };
   }
 
   upsert(entry: ClawckEntry): ClawckEntry {
     this.db.prepare(
-      `INSERT OR REPLACE INTO entries (id, agent, model, client, project, task, category, start, end_, status, tokens_in, tokens_out, cost_usd, tool_calls, summary, tags, source, spec_version, approved, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))`
-    ).run(entry.id, entry.agent, entry.model, entry.client, entry.project, entry.task, entry.category, entry.start, entry.end, entry.status, entry.tokens_in, entry.tokens_out, entry.cost_usd, entry.tool_calls, entry.summary, JSON.stringify(entry.tags), entry.source, entry.spec_version, entry.approved ? 1 : 0);
+      `INSERT OR REPLACE INTO entries (id, agent, model, client, project, task, category, start, end_, status, tokens_in, tokens_out, cost_usd, tool_calls, summary, tags, source, spec_version, approved, agent_runtime_ms, wall_clock_ms, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))`
+    ).run(entry.id, entry.agent, entry.model, entry.client, entry.project, entry.task, entry.category, entry.start, entry.end, entry.status, entry.tokens_in, entry.tokens_out, entry.cost_usd, entry.tool_calls, entry.summary, JSON.stringify(entry.tags), entry.source, entry.spec_version, entry.approved ? 1 : 0, entry.agent_runtime_ms ?? null, entry.wall_clock_ms ?? null);
     return this.getById(entry.id)!;
   }
 
   bulkUpsert(entries: ClawckEntry[]): number {
     const upsertStmt = this.db.prepare(
-      `INSERT OR REPLACE INTO entries (id, agent, model, client, project, task, category, start, end_, status, tokens_in, tokens_out, cost_usd, tool_calls, summary, tags, source, spec_version, approved, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))`
+      `INSERT OR REPLACE INTO entries (id, agent, model, client, project, task, category, start, end_, status, tokens_in, tokens_out, cost_usd, tool_calls, summary, tags, source, spec_version, approved, agent_runtime_ms, wall_clock_ms, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))`
     );
     const runMany = this.db.transaction((items: ClawckEntry[]) => {
       for (const entry of items) {
-        upsertStmt.run(entry.id, entry.agent, entry.model, entry.client, entry.project, entry.task, entry.category, entry.start, entry.end, entry.status, entry.tokens_in, entry.tokens_out, entry.cost_usd, entry.tool_calls, entry.summary, JSON.stringify(entry.tags), entry.source, entry.spec_version, entry.approved ? 1 : 0);
+        upsertStmt.run(entry.id, entry.agent, entry.model, entry.client, entry.project, entry.task, entry.category, entry.start, entry.end, entry.status, entry.tokens_in, entry.tokens_out, entry.cost_usd, entry.tool_calls, entry.summary, JSON.stringify(entry.tags), entry.source, entry.spec_version, entry.approved ? 1 : 0, entry.agent_runtime_ms ?? null, entry.wall_clock_ms ?? null);
       }
     });
     runMany(entries);
@@ -223,6 +255,116 @@ export class ClawckDB {
       last_error: row.last_error as string | undefined,
       entries_synced: row.entries_synced as number,
     }));
+  }
+
+  // ─── Personal Baselines ─────────────────────────────────
+
+  insertBaseline(baseline: PersonalBaseline): PersonalBaseline {
+    this.db.prepare(
+      `INSERT INTO personal_baselines (id, category, task_type, description, my_minutes, created_at, updated_at) VALUES (?,?,?,?,?,?,?)`
+    ).run(baseline.id, baseline.category, baseline.task_type, baseline.description, baseline.my_minutes, baseline.created_at, baseline.updated_at);
+    return baseline;
+  }
+
+  updateBaseline(id: string, updates: Partial<PersonalBaseline>): PersonalBaseline | null {
+    const existing = this.getBaselineById(id);
+    if (!existing) return null;
+    const fields: string[] = [];
+    const values: any[] = [];
+    if (updates.category !== undefined) { fields.push('category = ?'); values.push(updates.category); }
+    if (updates.task_type !== undefined) { fields.push('task_type = ?'); values.push(updates.task_type); }
+    if (updates.description !== undefined) { fields.push('description = ?'); values.push(updates.description); }
+    if (updates.my_minutes !== undefined) { fields.push('my_minutes = ?'); values.push(updates.my_minutes); }
+    fields.push("updated_at = datetime('now')");
+    if (fields.length === 1) return existing;
+    values.push(id);
+    this.db.prepare(`UPDATE personal_baselines SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+    return this.getBaselineById(id);
+  }
+
+  deleteBaseline(id: string): boolean {
+    const result = this.db.prepare('DELETE FROM personal_baselines WHERE id = ?').run(id);
+    return result.changes > 0;
+  }
+
+  getBaselineById(id: string): PersonalBaseline | null {
+    const row = this.db.prepare('SELECT * FROM personal_baselines WHERE id = ?').get(id) as any;
+    return row ? this.rowToBaseline(row) : null;
+  }
+
+  getBaselines(): PersonalBaseline[] {
+    const rows = this.db.prepare('SELECT * FROM personal_baselines ORDER BY category, task_type').all() as any[];
+    return rows.map(r => this.rowToBaseline(r));
+  }
+
+  getBaselinesByCategory(category: string): PersonalBaseline[] {
+    const rows = this.db.prepare('SELECT * FROM personal_baselines WHERE category = ? ORDER BY task_type').all(category) as any[];
+    return rows.map(r => this.rowToBaseline(r));
+  }
+
+  private rowToBaseline(row: any): PersonalBaseline {
+    return {
+      id: row.id,
+      category: row.category as TaskCategory,
+      task_type: row.task_type,
+      description: row.description,
+      my_minutes: row.my_minutes,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+    };
+  }
+
+  // ─── Reports ───────────────────────────────────────────
+
+  insertReport(report: StoredReport): StoredReport {
+    const content = typeof report.content === 'string' ? Buffer.from(report.content, 'utf-8') : report.content;
+    this.db.prepare(
+      `INSERT INTO reports (id, name, period, period_start, period_end, style, format, content, metadata, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`
+    ).run(report.id, report.name, report.period, report.period_start, report.period_end, report.style, report.format, content, JSON.stringify(report.metadata), report.created_at);
+    return report;
+  }
+
+  getReportById(id: string): StoredReport | null {
+    const row = this.db.prepare('SELECT id, name, period, period_start, period_end, style, format, metadata, created_at FROM reports WHERE id = ?').get(id) as any;
+    return row ? this.rowToReport(row) : null;
+  }
+
+  listReports(limit: number = 50, offset: number = 0): StoredReport[] {
+    const rows = this.db.prepare('SELECT id, name, period, period_start, period_end, style, format, metadata, created_at FROM reports ORDER BY created_at DESC LIMIT ? OFFSET ?').all(limit, offset) as any[];
+    return rows.map(r => this.rowToReport(r));
+  }
+
+  getReportContent(id: string): StoredReport | null {
+    const row = this.db.prepare('SELECT * FROM reports WHERE id = ?').get(id) as any;
+    if (!row) return null;
+    const report = this.rowToReport(row);
+    if (row.content) {
+      const buf = Buffer.isBuffer(row.content) ? row.content : Buffer.from(row.content);
+      report.content = report.format === 'pdf' ? buf : buf.toString('utf-8');
+    } else {
+      report.content = '';
+    }
+    return report;
+  }
+
+  deleteReport(id: string): boolean {
+    const result = this.db.prepare('DELETE FROM reports WHERE id = ?').run(id);
+    return result.changes > 0;
+  }
+
+  private rowToReport(row: any): StoredReport {
+    return {
+      id: row.id,
+      name: row.name,
+      period: row.period as ReportPeriod,
+      period_start: row.period_start,
+      period_end: row.period_end,
+      style: row.style as ReportStyle,
+      format: row.format as ReportFormat,
+      content: '',
+      metadata: JSON.parse(row.metadata || '{}') as ReportMetadata,
+      created_at: row.created_at,
+    };
   }
 
   close(): void { this.db.close(); }

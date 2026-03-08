@@ -111,4 +111,51 @@ describe('PDF report generation', () => {
     fs.closeSync(fd);
     expect(buf.toString('ascii')).toBe('%PDF');
   });
+
+  // ─── Style Tests ──────────────────────────────────────
+
+  it('style=short produces valid smaller PDF', async () => {
+    const fullPath = tmpPath();
+    const shortPath = tmpPath();
+    await generateTimesheetPDF(mockSummary, { dateRange: '2026-03-01 to 2026-03-08', outputPath: fullPath, style: 'full' });
+    await generateTimesheetPDF(mockSummary, { dateRange: '2026-03-01 to 2026-03-08', outputPath: shortPath, style: 'short' });
+
+    const fullSize = fs.statSync(fullPath).size;
+    const shortSize = fs.statSync(shortPath).size;
+    expect(shortSize).toBeGreaterThan(0);
+    expect(shortSize).toBeLessThanOrEqual(fullSize);
+
+    const buf = Buffer.alloc(4);
+    const fd = fs.openSync(shortPath, 'r');
+    fs.readSync(fd, buf, 0, 4, 0);
+    fs.closeSync(fd);
+    expect(buf.toString('ascii')).toBe('%PDF');
+  });
+
+  it('style=table produces valid PDF', async () => {
+    const summaryWithEntries = {
+      ...mockSummary,
+      entries: [
+        { date: '2026-03-07', agent: 'bot-1', client: 'acme', project: 'website', task: 'Build feature', category: 'code' as const, duration_minutes: 60, tokens_total: 5000, cost_usd: 0.10, human_equiv_hours: 6, human_equiv_cost_saved: 450, status: 'completed' as const, approved: true },
+      ],
+    };
+    const outputPath = tmpPath();
+    await generateTimesheetPDF(summaryWithEntries, { dateRange: '2026-03-01 to 2026-03-08', outputPath, style: 'table' });
+
+    expect(fs.existsSync(outputPath)).toBe(true);
+    const buf = Buffer.alloc(4);
+    const fd = fs.openSync(outputPath, 'r');
+    fs.readSync(fd, buf, 0, 4, 0);
+    fs.closeSync(fd);
+    expect(buf.toString('ascii')).toBe('%PDF');
+  });
+
+  it('style=full produces unchanged behavior', async () => {
+    const outputPath = tmpPath();
+    await generateTimesheetPDF(mockSummary, { dateRange: '2026-03-01 to 2026-03-08', outputPath, style: 'full' });
+
+    expect(fs.existsSync(outputPath)).toBe(true);
+    const stat = fs.statSync(outputPath);
+    expect(stat.size).toBeGreaterThan(0);
+  });
 });

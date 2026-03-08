@@ -67,7 +67,7 @@ The project being worked on. Infer from context, directory name, or ask once and
 
 ### client
 The client or organization. Infer from context or prior entries:
-- "acme-corp", "internal", "cubicrew"
+- "acme-corp", "internal", "my-company"
 
 ### category
 Classify the type of work. Available categories:

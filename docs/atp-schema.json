@@ -1,0 +1,298 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://clawck.dev/schemas/atp-entry-v0.2.json",
+  "title": "ATP Entry v0.2",
+  "description": "Agentic Time Protocol v0.2 entry schema for AI agent time tracking.",
+  "type": "object",
+  "required": [
+    "id",
+    "agent",
+    "model",
+    "client",
+    "project",
+    "task",
+    "category",
+    "start",
+    "end",
+    "status",
+    "tokens_in",
+    "tokens_out",
+    "cost_usd",
+    "tool_calls",
+    "summary",
+    "tags",
+    "source",
+    "spec_version"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Globally unique entry ID (UUID v4)."
+    },
+    "agent": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Agent identifier (e.g., 'research-agent-01')."
+    },
+    "model": {
+      "type": "string",
+      "minLength": 1,
+      "description": "LLM model used (e.g., 'claude-sonnet-4-20250514')."
+    },
+    "client": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Client name or identifier."
+    },
+    "project": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Project name or identifier."
+    },
+    "task": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Human-readable task description."
+    },
+    "category": {
+      "type": "string",
+      "enum": [
+        "research",
+        "content",
+        "code",
+        "data_entry",
+        "design",
+        "communication",
+        "analysis",
+        "testing",
+        "planning",
+        "other"
+      ],
+      "description": "Task category for human-equivalent estimates and benchmarking."
+    },
+    "start": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 start timestamp."
+    },
+    "end": {
+      "type": ["string", "null"],
+      "format": "date-time",
+      "description": "ISO 8601 end timestamp. Null if the task is still running."
+    },
+    "status": {
+      "type": "string",
+      "enum": ["running", "completed", "failed", "paused"],
+      "description": "Current lifecycle state of the entry."
+    },
+    "tokens_in": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of input tokens consumed."
+    },
+    "tokens_out": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of output tokens generated."
+    },
+    "cost_usd": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Estimated cost in US dollars."
+    },
+    "tool_calls": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of tool/function calls made during this entry."
+    },
+    "summary": {
+      "type": "string",
+      "description": "Agent-generated summary of work done."
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "Arbitrary tags for filtering and categorization."
+    },
+    "source": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Source tool/framework that created this entry."
+    },
+    "spec_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "ATP specification version (semver)."
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 creation timestamp."
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 last-updated timestamp."
+    },
+    "approved": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether this entry has been reviewed and approved by a human."
+    },
+    "agent_runtime_ms": {
+      "type": ["number", "null"],
+      "minimum": 0,
+      "default": null,
+      "description": "Estimated agent active processing time in milliseconds. Excludes queue wait, human review, and idle time."
+    },
+    "wall_clock_ms": {
+      "type": ["number", "null"],
+      "minimum": 0,
+      "default": null,
+      "description": "Total elapsed wall-clock time in milliseconds from start to end."
+    },
+    "comparison": {
+      "oneOf": [
+        { "$ref": "#/$defs/EntryComparison" },
+        { "type": "null" }
+      ],
+      "description": "Benchmark comparison data attached to this entry."
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "EntryComparison": {
+      "type": "object",
+      "required": ["agent_runtime_minutes", "wall_clock_minutes"],
+      "properties": {
+        "industry_benchmark_minutes": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Estimated time in minutes a human professional would take, sourced from industry data."
+        },
+        "industry_source": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Citation or identifier for the industry benchmark value."
+        },
+        "personal_benchmark_minutes": {
+          "type": "number",
+          "minimum": 0,
+          "description": "User's own historical average time in minutes for similar tasks."
+        },
+        "agent_runtime_minutes": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Agent active processing time in minutes."
+        },
+        "wall_clock_minutes": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Total wall-clock duration in minutes."
+        }
+      },
+      "additionalProperties": false,
+      "dependentRequired": {
+        "industry_benchmark_minutes": ["industry_source"]
+      }
+    },
+    "TaskCategory": {
+      "type": "string",
+      "enum": [
+        "research",
+        "content",
+        "code",
+        "data_entry",
+        "design",
+        "communication",
+        "analysis",
+        "testing",
+        "planning",
+        "other"
+      ]
+    },
+    "EntryStatus": {
+      "type": "string",
+      "enum": ["running", "completed", "failed", "paused"]
+    },
+    "ATPExportEnvelope": {
+      "type": "object",
+      "required": ["atp_version", "generated_at", "source_tool", "source_version", "entries"],
+      "properties": {
+        "atp_version": {
+          "type": "string",
+          "const": "0.2.0",
+          "description": "ATP specification version."
+        },
+        "generated_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 timestamp of when this envelope was generated."
+        },
+        "source_tool": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Name of the tool that produced this export."
+        },
+        "source_version": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "description": "Version of the source tool (semver)."
+        },
+        "entries": {
+          "type": "array",
+          "items": { "$ref": "#" },
+          "description": "Array of ATP v0.2 entries."
+        },
+        "benchmarks": {
+          "type": "object",
+          "patternProperties": {
+            "^(research|content|code|data_entry|design|communication|analysis|testing|planning|other)$": {
+              "type": "object",
+              "required": ["minutes", "source"],
+              "properties": {
+                "minutes": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "source": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false,
+          "description": "Industry benchmark lookup table keyed by TaskCategory."
+        },
+        "personal_baselines": {
+          "type": "object",
+          "patternProperties": {
+            "^(research|content|code|data_entry|design|communication|analysis|testing|planning|other)$": {
+              "type": "object",
+              "required": ["minutes"],
+              "properties": {
+                "minutes": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "project": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false,
+          "description": "Personal baseline lookup table keyed by TaskCategory."
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

@@ -169,7 +169,7 @@ export async function startMCPServer(config: Partial<ClawckConfig> = {}): Promis
           result: {
             protocolVersion: '2024-11-05',
             capabilities: { tools: {} },
-            serverInfo: { name: 'clawck', version: '0.1.2' },
+            serverInfo: { name: 'clawck', version: '0.4.0' },
             instructions: `Clawck measures YOUR generation time — you, the AI agent, are the worker being timed. This is NOT human time tracking. You are measuring how long YOUR computation, reasoning, tool calls, and response generation take per turn. The resulting durations are typically seconds to minutes — the wall-clock time from when you start processing to when you finish generating.
 
 ## Generation Lifecycle Protocol
