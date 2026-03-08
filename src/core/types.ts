@@ -356,7 +356,7 @@ export interface ClawckLogInput {
 // ─── Defaults ────────────────────────────────────────────
 
 export const SPEC_VERSION = '0.2.0';
-export const APP_VERSION = '0.4.3';
+export const APP_VERSION = '0.5.0';
 
 /**
  * Default human-equivalent multipliers.

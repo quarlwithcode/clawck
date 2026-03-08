@@ -1,4 +1,4 @@
-# Clawck v0.4
+# Clawck v0.5
 
 **Time tracking for AI agents. Toggl for the agentic era.**
 
