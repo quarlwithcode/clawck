@@ -382,6 +382,10 @@ export async function createServer(config: Partial<ClawckConfig> = {}): Promise<
     if (res.headersSent) return next(err);
     if (err instanceof ClawckError) {
       res.status(err.status).json({ error: err.message, code: err.code });
+    } else if (err.status || err.statusCode) {
+      // Express built-in errors (e.g., PayloadTooLargeError)
+      const status = err.status || err.statusCode;
+      res.status(status).json({ error: err.message });
     } else {
       logger.error('api', 'Unhandled error', { error: err.message || String(err) });
       res.status(500).json({ error: 'Internal server error' });

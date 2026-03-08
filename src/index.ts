@@ -37,6 +37,8 @@ export type { PersonalBaseline, PersonalComparisonResult } from './core/personal
 export { ClawckError, ValidationError, NotFoundError, ConfigError } from './core/errors';
 export { validateConfig } from './core/config';
 export type { ConfigValidationResult } from './core/config';
+export { estimateCost, getModelPricing, MODEL_PRICING } from './core/pricing';
+export type { ModelPricing } from './core/pricing';
 export { validateEntry, migrateV1toV2, exportATP, importATP } from './core/atp';
 export type { ATPExportEnvelope, EntryComparison } from './core/atp';
 export { resolvePeriod } from './reports/periods';
