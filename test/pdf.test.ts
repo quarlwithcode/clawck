@@ -30,6 +30,9 @@ describe('PDF report generation', () => {
     total_cost_usd: 1.25,
     total_savings_usd: 4375,
     total_tokens: 150000,
+    total_tokens_in: 100000,
+    total_tokens_out: 50000,
+    total_time_saved_hours: 75,
     by_client: [
       { client: 'acme', agent_hours: 8, human_equiv_hours: 56, cost_usd: 0.80, savings_usd: 2800, entries: 3 },
       { client: 'globex', agent_hours: 4.5, human_equiv_hours: 31.5, cost_usd: 0.45, savings_usd: 1575, entries: 2 },
@@ -92,6 +95,9 @@ describe('PDF report generation', () => {
       total_cost_usd: 0,
       total_savings_usd: 0,
       total_tokens: 0,
+      total_tokens_in: 0,
+      total_tokens_out: 0,
+      total_time_saved_hours: 0,
       by_client: [],
       by_agent: [],
       by_project: [],
@@ -136,7 +142,7 @@ describe('PDF report generation', () => {
     const summaryWithEntries = {
       ...mockSummary,
       entries: [
-        { date: '2026-03-07', agent: 'bot-1', client: 'acme', project: 'website', task: 'Build feature', category: 'code' as const, duration_minutes: 60, tokens_total: 5000, cost_usd: 0.10, human_equiv_hours: 6, human_equiv_cost_saved: 450, status: 'completed' as const, approved: true },
+        { date: '2026-03-07', start_time: '2026-03-07T10:00:00.000Z', end_time: '2026-03-07T11:00:00.000Z', agent: 'bot-1', client: 'acme', project: 'website', task: 'Build feature', category: 'code' as const, duration_minutes: 60, tokens_in: 3000, tokens_out: 2000, tokens_total: 5000, cost_usd: 0.10, human_equiv_hours: 6, human_equiv_cost_saved: 450, time_saved_hours: 5, status: 'completed' as const, approved: true },
       ],
     };
     const outputPath = tmpPath();

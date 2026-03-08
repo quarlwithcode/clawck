@@ -40,7 +40,7 @@ describe('HTML Report', () => {
     const html = generateTimesheetHTML(ts, { dateRange: '2026-03-07 to 2026-03-08' });
     expect(html).toContain('data-tab="calendar"');
     expect(html).toContain('data-tab="table"');
-    expect(html).toContain('data-tab="gantt"');
+    expect(html).toContain('data-tab="timeline"');
     expect(html).toContain('data-tab="csv"');
   });
 
@@ -84,7 +84,7 @@ describe('HTML Report', () => {
     fs.unlinkSync(outPath);
   });
 
-  it('includes Gantt chart with raw entries', async () => {
+  it('includes Timeline with raw entries', async () => {
     const c = await setup();
     c.upsert(makeEntry({
       start: '2026-03-07T10:00:00.000Z',
@@ -93,7 +93,7 @@ describe('HTML Report', () => {
     const ts = c.timesheet('2026-03-07T00:00:00.000Z', '2026-03-08T00:00:00.000Z');
     const rawEntries = c.query({ from: '2026-03-07T00:00:00.000Z', to: '2026-03-08T00:00:00.000Z' });
     const html = generateTimesheetHTML(ts, { dateRange: '2026-03-07 to 2026-03-08', rawEntries });
-    expect(html).toContain('gantt-bar');
+    expect(html).toContain('timeline-card');
   });
 
   // ─── Style Tests ──────────────────────────────────────
@@ -106,7 +106,7 @@ describe('HTML Report', () => {
     const html = generateTimesheetHTML(ts, { dateRange: '2026-03-07 to 2026-03-08', rawEntries, style: 'full' });
     expect(html).toContain('data-tab="calendar"');
     expect(html).toContain('data-tab="table"');
-    expect(html).toContain('data-tab="gantt"');
+    expect(html).toContain('data-tab="timeline"');
     expect(html).toContain('data-tab="csv"');
   });
 
@@ -126,18 +126,18 @@ describe('HTML Report', () => {
     const html = generateTimesheetHTML(ts, { dateRange: '2026-03-07 to 2026-03-08', style: 'table' });
     expect(html).toContain('id="tab-table"');
     expect(html).not.toContain('id="tab-calendar"');
-    expect(html).not.toContain('id="tab-gantt"');
+    expect(html).not.toContain('id="tab-timeline"');
     expect(html).not.toContain('id="tab-csv"');
   });
 
-  it('style=visual shows gantt + calendar only', async () => {
+  it('style=visual shows timeline + calendar only', async () => {
     const c = await setup();
     c.upsert(makeEntry({ start: '2026-03-07T10:00:00.000Z', end: '2026-03-07T11:00:00.000Z' }));
     const ts = c.timesheet('2026-03-07T00:00:00.000Z', '2026-03-08T00:00:00.000Z');
     const rawEntries = c.query({ from: '2026-03-07T00:00:00.000Z', to: '2026-03-08T00:00:00.000Z' });
     const html = generateTimesheetHTML(ts, { dateRange: '2026-03-07 to 2026-03-08', rawEntries, style: 'visual' });
     expect(html).toContain('id="tab-calendar"');
-    expect(html).toContain('id="tab-gantt"');
+    expect(html).toContain('id="tab-timeline"');
     expect(html).not.toContain('id="tab-table"');
     expect(html).not.toContain('id="tab-csv"');
   });
@@ -149,7 +149,7 @@ describe('HTML Report', () => {
     const html = generateTimesheetHTML(ts, { dateRange: '2026-03-07 to 2026-03-08', style: 'calendar' });
     expect(html).toContain('id="tab-calendar"');
     expect(html).not.toContain('id="tab-table"');
-    expect(html).not.toContain('id="tab-gantt"');
+    expect(html).not.toContain('id="tab-timeline"');
     expect(html).not.toContain('id="tab-csv"');
   });
 });
