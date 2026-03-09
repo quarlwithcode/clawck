@@ -168,6 +168,63 @@ describe('Cost Auto-Estimation', () => {
   });
 });
 
+describe('Token/Cost Estimation Fallbacks', () => {
+  it('stop() reverse-estimates tokens from wall clock when no token data', async () => {
+    const c = await setup();
+    // Use upsert to create entry with a backdated start (60s ago)
+    c.upsert(makeEntry({
+      id: 'hook-est-1',
+      start: new Date(Date.now() - 60000).toISOString(),
+      end: null as any,
+      status: 'running',
+      model: 'claude-sonnet-4',
+      tokens_in: 0,
+      tokens_out: 0,
+      cost_usd: 0,
+      tool_calls: 0,
+    }));
+    // Simulate hook stop: no tokens, no cost
+    c.stop({ id: 'hook-est-1' });
+    const updated = c.get('hook-est-1');
+    expect(updated?.tokens_out).toBeGreaterThan(0);
+    expect(updated?.cost_usd).toBeGreaterThan(0);
+  });
+
+  it('stop() does NOT override explicit tokens with estimate', async () => {
+    const c = await setup();
+    const entry = c.start({ task: 'explicit-test', model: 'claude-sonnet-4' });
+    c.stop({ id: entry.id, tokens_in: 5000, tokens_out: 2000 });
+    const updated = c.get(entry.id);
+    expect(updated?.tokens_in).toBe(5000);
+    expect(updated?.tokens_out).toBe(2000);
+  });
+
+  it('log() estimates cost from tokens when cost_usd absent', async () => {
+    const c = await setup();
+    const entry = c.log({
+      task: 'log-cost-test',
+      duration_minutes: 10,
+      model: 'claude-sonnet-4',
+      tokens_in: 100000,
+      tokens_out: 50000,
+    });
+    expect(entry.cost_usd).toBeGreaterThan(0);
+  });
+
+  it('log() preserves explicit cost_usd', async () => {
+    const c = await setup();
+    const entry = c.log({
+      task: 'log-explicit-cost',
+      duration_minutes: 10,
+      model: 'claude-sonnet-4',
+      tokens_in: 100000,
+      tokens_out: 50000,
+      cost_usd: 1.23,
+    });
+    expect(entry.cost_usd).toBe(1.23);
+  });
+});
+
 describe('HTML Report: Time Saved and Timeline', () => {
   it('HTML includes Time Saved card', async () => {
     const c = await setup();

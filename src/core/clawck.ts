@@ -13,7 +13,7 @@ import { estimateCost } from './pricing';
 import { ClawckDB } from './database';
 import { WebhookManager } from './webhooks';
 import { DEFAULT_PATTERNS } from './patterns';
-import { estimateAgentRuntime, calculateWallClock, DEFAULT_RUNTIME_CONFIG, RuntimeEstimatorConfig } from './runtime';
+import { estimateAgentRuntime, calculateWallClock, findModelSpeed, DEFAULT_RUNTIME_CONFIG, RuntimeEstimatorConfig } from './runtime';
 import { PersonalBaseline, compareEntry, PersonalComparisonResult } from './personal';
 import { INDUSTRY_BENCHMARKS } from './benchmarks';
 import { v4 as uuidv4 } from 'uuid';
@@ -137,6 +137,22 @@ export class Clawck {
       } else {
         // No token data available (e.g. hook-based tracking) — wall clock is the best proxy
         updates.agent_runtime_ms = updates.wall_clock_ms;
+
+        // Reverse-estimate tokens from wall clock time
+        if (updates.wall_clock_ms && updates.wall_clock_ms > 0) {
+          const runtimeConfig = this.getRuntimeConfig();
+          const speed = findModelSpeed(model, runtimeConfig);
+          // 0.5 factor: not all wall clock time is active generation
+          const estimatedOut = Math.round((updates.wall_clock_ms / 1000) * speed * 0.5);
+          if (estimatedOut > 0) {
+            updates.tokens_out = estimatedOut;
+            updates.tokens_in = Math.round(estimatedOut * 2); // rough input:output ratio
+            const estimated = estimateCost(model, updates.tokens_in, estimatedOut, true);
+            if (estimated != null) {
+              updates.cost_usd = Math.round(estimated * 10000) / 10000;
+            }
+          }
+        }
       }
     }
 
@@ -170,6 +186,17 @@ export class Clawck {
       );
     }
 
+    let costUsd = input.cost_usd || 0;
+    if (costUsd === 0) {
+      const tokIn = input.tokens_in || 0;
+      if (tokIn > 0 || tokensOut > 0) {
+        const estimated = estimateCost(model, tokIn, tokensOut, true);
+        if (estimated != null) {
+          costUsd = Math.round(estimated * 10000) / 10000;
+        }
+      }
+    }
+
     const entry: ClawckEntry = {
       id: uuid(),
       agent: input.agent || pat?.agent || this.config.default_agent || 'unknown-agent',
@@ -183,7 +210,7 @@ export class Clawck {
       status: 'completed',
       tokens_in: input.tokens_in || 0,
       tokens_out: tokensOut,
-      cost_usd: input.cost_usd || 0,
+      cost_usd: costUsd,
       tool_calls: toolCalls,
       summary: input.summary || '',
       tags: input.tags || pat?.tags || [],

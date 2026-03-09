@@ -71,7 +71,7 @@ export function computeMergedRuntimeMs(entries: Array<{ start: string; end: stri
   return merged.reduce((sum, [start, end]) => sum + (end - start), 0);
 }
 
-function findModelSpeed(model: string, config: RuntimeEstimatorConfig): number {
+export function findModelSpeed(model: string, config: RuntimeEstimatorConfig): number {
   // Exact match first
   if (config.model_tokens_per_second[model]) {
     return config.model_tokens_per_second[model];
