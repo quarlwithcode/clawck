@@ -25,6 +25,15 @@ function logError(dataDir: string, message: string): void {
 
 export async function handleHookStart(config: ClawckConfig, context: HookContext): Promise<void> {
   try {
+    // If a session already exists for this session_id, skip creating a new entry.
+    // Claude Code fires UserPromptSubmit on every prompt, but session_id stays the
+    // same for the entire conversation. We only want one entry per conversation.
+    const existing = loadSession(config.data_dir, context.session_id);
+    if (existing) {
+      logger.debug('hooks', `Session ${context.session_id.slice(0, 8)} already active, skipping start`);
+      return;
+    }
+
     const clawck = await new Clawck(config).ready();
 
     try {
@@ -65,6 +74,8 @@ export async function handleHookStop(config: ClawckConfig, context: HookContext)
       logger.debug('hooks', 'Stop skipped — session already stopped or not started');
       return;
     }
+
+    logger.debug('hooks', `Stop context: tokens_in=${context.tokens_in} tokens_out=${context.tokens_out} cost_usd=${context.cost_usd} tool_calls=${context.tool_calls}`);
 
     const clawck = await new Clawck(config).ready();
 

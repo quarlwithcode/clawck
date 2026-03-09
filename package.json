@@ -1,7 +1,7 @@
 {
   "name": "clawck",
-  "version": "0.5.2",
-  "description": "⏱️🦀 Time tracking for AI agents. Toggl for the agentic era.",
+  "version": "0.5.3",
+  "description": "⏱️🦀 System of record for AI agent work.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {

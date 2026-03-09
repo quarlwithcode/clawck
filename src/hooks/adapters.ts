@@ -29,8 +29,9 @@ function normalizeClaude(json: Record<string, unknown>): HookContext {
     agent: 'claude-code',
     model: str(json.model),
     cwd: str(json.cwd),
-    tokens_in: num(json.tokens_in),
-    tokens_out: num(json.tokens_out),
+    tokens_in: num(json.tokens_in) ?? num(json.total_input_tokens),
+    tokens_out: num(json.tokens_out) ?? num(json.total_output_tokens),
+    cost_usd: num(json.cost_usd) ?? num(json.total_cost_usd),
     tool_calls: num(json.tool_calls) ?? num(json.num_tool_calls),
     raw: json,
   };
@@ -48,9 +49,10 @@ function normalizeGemini(json: Record<string, unknown>): HookContext {
     agent: 'gemini-cli',
     model: str(json.model) || str(ctx?.model),
     cwd: str(json.cwd) || str(ctx?.cwd),
-    tokens_in: num(json.tokens_in),
-    tokens_out: num(json.tokens_out),
-    tool_calls: num(json.tool_calls),
+    tokens_in: num(json.tokens_in) ?? num(json.input_tokens),
+    tokens_out: num(json.tokens_out) ?? num(json.output_tokens),
+    cost_usd: num(json.cost_usd) ?? num(json.total_cost_usd),
+    tool_calls: num(json.tool_calls) ?? num(json.num_tool_calls),
     raw: json,
   };
 }
@@ -66,6 +68,10 @@ function normalizeCursor(json: Record<string, unknown>): HookContext {
     agent: 'cursor',
     model: str(json.model),
     cwd: str(json.workspace_path) || str(json.cwd),
+    tokens_in: num(json.tokens_in) ?? num(json.input_tokens),
+    tokens_out: num(json.tokens_out) ?? num(json.output_tokens),
+    cost_usd: num(json.cost_usd) ?? num(json.total_cost_usd),
+    tool_calls: num(json.tool_calls) ?? num(json.num_tool_calls),
     raw: json,
   };
 }
@@ -81,6 +87,10 @@ function normalizeCline(json: Record<string, unknown>): HookContext {
     agent: 'cline',
     model: str(json.model) || str(json.apiProvider),
     cwd: str(json.workspacePath) || str(json.cwd),
+    tokens_in: num(json.tokens_in) ?? num(json.input_tokens) ?? num(json.tokensIn),
+    tokens_out: num(json.tokens_out) ?? num(json.output_tokens) ?? num(json.tokensOut),
+    cost_usd: num(json.cost_usd) ?? num(json.totalCost),
+    tool_calls: num(json.tool_calls) ?? num(json.num_tool_calls),
     raw: json,
   };
 }
@@ -96,6 +106,10 @@ function normalizeWindsurf(json: Record<string, unknown>): HookContext {
     agent: 'windsurf',
     model: str(json.model),
     cwd: str(json.workspace_path) || str(json.cwd),
+    tokens_in: num(json.tokens_in) ?? num(json.input_tokens),
+    tokens_out: num(json.tokens_out) ?? num(json.output_tokens),
+    cost_usd: num(json.cost_usd) ?? num(json.total_cost_usd),
+    tool_calls: num(json.tool_calls) ?? num(json.num_tool_calls),
     raw: json,
   };
 }
@@ -111,6 +125,10 @@ function normalizeCodex(json: Record<string, unknown>): HookContext {
     agent: 'codex',
     model: str(json.model),
     cwd: str(json.cwd),
+    tokens_in: num(json.tokens_in) ?? num(json.input_tokens),
+    tokens_out: num(json.tokens_out) ?? num(json.output_tokens),
+    cost_usd: num(json.cost_usd) ?? num(json.total_cost_usd),
+    tool_calls: num(json.tool_calls) ?? num(json.num_tool_calls),
     raw: json,
   };
 }
@@ -126,9 +144,10 @@ function normalizeUnknown(json: Record<string, unknown>): HookContext {
     agent: str(json.agent) || 'unknown',
     model: str(json.model),
     cwd: str(json.cwd),
-    tokens_in: num(json.tokens_in),
-    tokens_out: num(json.tokens_out),
-    tool_calls: num(json.tool_calls),
+    tokens_in: num(json.tokens_in) ?? num(json.input_tokens),
+    tokens_out: num(json.tokens_out) ?? num(json.output_tokens),
+    cost_usd: num(json.cost_usd) ?? num(json.total_cost_usd),
+    tool_calls: num(json.tool_calls) ?? num(json.num_tool_calls),
     raw: json,
   };
 }

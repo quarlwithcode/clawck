@@ -17,6 +17,7 @@ export interface HookContext {
   cwd?: string;
   tokens_in?: number;
   tokens_out?: number;
+  cost_usd?: number;
   tool_calls?: number;
   raw: unknown;
 }

@@ -5,6 +5,25 @@ All notable changes to Clawck are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Clawck uses [Semantic Versioning](https://semver.org/).
 
+## [0.5.3] - 2026-03-08
+
+### Fixed
+- **Time Saved bug**: `total_time_saved_hours` now uses merged runtime instead of additive agent hours, correctly accounting for concurrent agents (e.g., 3 agents running 30min concurrently now shows 8.5h saved instead of 7.5h)
+
+### Added
+- Token/cost extraction to all platform adapters (Gemini, Cursor, Cline, Windsurf, Codex) with speculative field name fallbacks
+- Debug logging in hook handler (`LOG_LEVEL=debug`) to diagnose token/cost extraction
+- New tests: concurrent time saved calculation, adapter token/cost extraction, hook round-trip token preservation
+- Skill docs: hook data flow documentation, verification instructions
+
+### Changed
+- README tagline: "System of record for AI agent work" (was "Toggl for the agentic era")
+- README status table reorganized with stable/experimental classification
+
+### Internal
+- Schema version: 5 (unchanged)
+- Spec version: 0.2.0 (unchanged)
+
 ## [0.5.2] - 2026-03-08
 
 ### Added

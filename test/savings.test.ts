@@ -30,7 +30,7 @@ describe('Time Savings', () => {
     );
   });
 
-  it('total_time_saved_hours aggregates correctly', async () => {
+  it('total_time_saved_hours aggregates correctly for non-overlapping entries', async () => {
     const c = await setup();
     c.upsert(makeEntry({
       id: 'ts1',
@@ -45,8 +45,48 @@ describe('Time Savings', () => {
       category: 'research',
     }));
     const ts = c.timesheet('2026-03-07T00:00:00.000Z', '2026-03-08T00:00:00.000Z');
+    // Non-overlapping: merged runtime == additive total, so total_time_saved = sum of per-row
     const expectedTotal = ts.entries.reduce((s, r) => s + r.time_saved_hours, 0);
     expect(ts.total_time_saved_hours).toBe(Math.round(expectedTotal * 100) / 100);
+  });
+
+  it('total_time_saved_hours accounts for concurrent agents', async () => {
+    const c = await setup();
+    // 3 agents all running 10:00-10:30, category=code (multiplier 6)
+    c.upsert(makeEntry({
+      id: 'concurrent-1',
+      start: '2026-03-07T10:00:00.000Z',
+      end: '2026-03-07T10:30:00.000Z',
+      category: 'code',
+    }));
+    c.upsert(makeEntry({
+      id: 'concurrent-2',
+      start: '2026-03-07T10:00:00.000Z',
+      end: '2026-03-07T10:30:00.000Z',
+      category: 'code',
+    }));
+    c.upsert(makeEntry({
+      id: 'concurrent-3',
+      start: '2026-03-07T10:00:00.000Z',
+      end: '2026-03-07T10:30:00.000Z',
+      category: 'code',
+    }));
+    const ts = c.timesheet('2026-03-07T00:00:00.000Z', '2026-03-08T00:00:00.000Z');
+
+    // Additive hours: 3 * 0.5 = 1.5h
+    // Human equiv: 1.5 * 6 = 9h
+    // Merged runtime: 0.5h (all overlap)
+    // Time saved = human_equiv - merged = 9 - 0.5 = 8.5
+    expect(ts.total_agent_merged_runtime_hours).toBe(0.5);
+    expect(ts.total_human_equiv_hours).toBe(9);
+    expect(ts.total_time_saved_hours).toBe(8.5);
+
+    // Per-row time_saved still uses individual calculation
+    for (const row of ts.entries) {
+      expect(row.time_saved_hours).toBe(
+        Math.round((row.human_equiv_hours - row.duration_minutes / 60) * 100) / 100
+      );
+    }
   });
 
   it('timesheet includes total_tokens_in and total_tokens_out', async () => {

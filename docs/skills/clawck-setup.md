@@ -114,6 +114,25 @@ def clawck_stop(entry_id, status="completed", summary=""):
 
 Use HTTP Request nodes to call the REST API at `http://localhost:3456/api/start` and `/api/stop` at the beginning and end of each agent turn.
 
+## Verifying Hook Data Flow
+
+If tokens or cost show as 0 in your entries, verify that the platform is sending the data:
+
+```bash
+# See what data the hook receives (debug mode)
+LOG_LEVEL=debug clawck hook stop
+
+# Test with sample JSON
+echo '{"session_id":"test","total_input_tokens":5000,"total_output_tokens":2000,"total_cost_usd":0.50}' | LOG_LEVEL=debug clawck hook stop
+```
+
+The debug output shows `Stop context: tokens_in=... tokens_out=... cost_usd=... tool_calls=...` so you can confirm the adapter extracted values correctly.
+
+Each platform adapter recognizes multiple field names:
+- **Claude**: `tokens_in`/`total_input_tokens`, `tokens_out`/`total_output_tokens`, `cost_usd`/`total_cost_usd`, `tool_calls`/`num_tool_calls`
+- **Gemini/Cursor/Windsurf/Codex**: `tokens_in`/`input_tokens`, `tokens_out`/`output_tokens`, `cost_usd`/`total_cost_usd`
+- **Cline**: `tokens_in`/`input_tokens`/`tokensIn`, `tokens_out`/`output_tokens`/`tokensOut`, `cost_usd`/`totalCost`
+
 ## Quick Start CLI
 
 ```bash

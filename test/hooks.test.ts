@@ -97,6 +97,42 @@ describe('normalize', () => {
     expect(ctx.task).toBe('unknown-task');
   });
 
+  it('Claude Stop event: extracts tokens and cost from fallback field names', () => {
+    const ctx = normalize({
+      session_id: 'ses-tok',
+      transcript_path: '/tmp/t',
+      hook_event_name: 'Stop',
+      total_input_tokens: 5000,
+      total_output_tokens: 2000,
+      total_cost_usd: 0.50,
+      num_tool_calls: 3,
+    });
+
+    expect(ctx.platform).toBe('claude');
+    expect(ctx.tokens_in).toBe(5000);
+    expect(ctx.tokens_out).toBe(2000);
+    expect(ctx.cost_usd).toBe(0.50);
+    expect(ctx.tool_calls).toBe(3);
+  });
+
+  it('all adapters extract cost_usd when present', () => {
+    const platforms = [
+      { json: { hook_event_name: 'Stop', session_id: 's', transcript_path: '/t', cost_usd: 1.23 }, platform: 'claude' as const },
+      { json: { GEMINI_SESSION_ID: 'g', cost_usd: 1.23 }, platform: 'gemini' as const },
+      { json: { conversation_id: 'c', generation_id: 'g', cost_usd: 1.23 }, platform: 'cursor' as const },
+      { json: { clineVersion: '2', taskId: 't', cost_usd: 1.23 }, platform: 'cline' as const },
+      { json: { agent_action_name: 'a', cost_usd: 1.23 }, platform: 'windsurf' as const },
+      { json: { thread_id: 't', cost_usd: 1.23 }, platform: 'codex' as const },
+      { json: { cost_usd: 1.23 }, platform: 'unknown' as const },
+    ];
+
+    for (const { json, platform } of platforms) {
+      const ctx = normalize(json);
+      expect(ctx.platform).toBe(platform);
+      expect(ctx.cost_usd).toBe(1.23);
+    }
+  });
+
   it('extracts Cline fields correctly', () => {
     const ctx = normalize({
       clineVersion: '2.0',
@@ -297,6 +333,44 @@ describe('hook handlers', () => {
     const durationMs = new Date(entry!.end!).getTime() - new Date(entry!.start).getTime();
     expect(durationMs).toBeGreaterThan(0);
 
+    clawck.close();
+  });
+
+  it('hook round-trip preserves token/cost data', async () => {
+    const config = makeTmpConfig();
+    const startContext: HookContext = {
+      platform: 'claude',
+      session_id: 'token-roundtrip',
+      task: 'test token tracking',
+      agent: 'claude-code',
+      raw: {},
+    };
+
+    await handleHookStart(config, startContext);
+    const session = loadSession(config.data_dir, 'token-roundtrip');
+    expect(session).not.toBeNull();
+
+    const stopContext: HookContext = {
+      platform: 'claude',
+      session_id: 'token-roundtrip',
+      task: 'test token tracking',
+      agent: 'claude-code',
+      tokens_in: 5000,
+      tokens_out: 2000,
+      cost_usd: 0.75,
+      tool_calls: 10,
+      raw: {},
+    };
+
+    await handleHookStop(config, stopContext);
+
+    const clawck = await new Clawck(config).ready();
+    const entry = clawck.get(session!.entry_id);
+    expect(entry).not.toBeNull();
+    expect(entry!.tokens_in).toBe(5000);
+    expect(entry!.tokens_out).toBe(2000);
+    expect(entry!.cost_usd).toBe(0.75);
+    expect(entry!.tool_calls).toBe(10);
     clawck.close();
   });
 });

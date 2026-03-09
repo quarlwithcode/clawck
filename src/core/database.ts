@@ -275,8 +275,6 @@ export class ClawckDB {
     const totalTokens = rows.reduce((s, r) => s + r.tokens_total, 0);
     const totalTokensIn = entries.reduce((s, e) => s + e.tokens_in, 0);
     const totalTokensOut = entries.reduce((s, e) => s + e.tokens_out, 0);
-    const totalTimeSaved = rows.reduce((s, r) => s + r.time_saved_hours, 0);
-
     const clientMap = new Map<string, ClientSummary>();
     for (const r of rows) { const c = clientMap.get(r.client) || { client: r.client, agent_hours: 0, human_equiv_hours: 0, cost_usd: 0, savings_usd: 0, entries: 0 }; c.agent_hours += r.duration_minutes / 60; c.human_equiv_hours += r.human_equiv_hours; c.cost_usd += r.cost_usd; c.savings_usd += r.human_equiv_cost_saved; c.entries += 1; clientMap.set(r.client, c); }
 
@@ -291,7 +289,7 @@ export class ClawckDB {
 
     const round2 = (n: number) => Math.round(n * 100) / 100;
     const mergedMs = computeMergedRuntimeMs(entries.map(e => ({ start: e.start, end: e.end })));
-    return { period_start: from, period_end: to, total_entries: entries.length, total_agent_hours: round2(totalAgentHours), total_human_equiv_hours: round2(totalHumanEquiv), total_cost_usd: round2(totalCost), total_savings_usd: round2(totalSavings), total_tokens: totalTokens, total_tokens_in: totalTokensIn, total_tokens_out: totalTokensOut, total_time_saved_hours: round2(totalTimeSaved), total_agent_merged_runtime_hours: round2(mergedMs / 3600000),
+    return { period_start: from, period_end: to, total_entries: entries.length, total_agent_hours: round2(totalAgentHours), total_human_equiv_hours: round2(totalHumanEquiv), total_cost_usd: round2(totalCost), total_savings_usd: round2(totalSavings), total_tokens: totalTokens, total_tokens_in: totalTokensIn, total_tokens_out: totalTokensOut, total_time_saved_hours: round2(totalHumanEquiv - mergedMs / 3600000), total_agent_merged_runtime_hours: round2(mergedMs / 3600000),
       by_client: [...clientMap.values()].map(c => ({ ...c, agent_hours: round2(c.agent_hours), human_equiv_hours: round2(c.human_equiv_hours), cost_usd: round2(c.cost_usd), savings_usd: round2(c.savings_usd) })),
       by_agent: [...agentMap.values()].map(a => ({ ...a, agent_hours: round2(a.agent_hours), human_equiv_hours: round2(a.human_equiv_hours), cost_usd: round2(a.cost_usd), success_rate: a.entries > 0 ? Math.round((a.completed / a.entries) * 100) : 0 })),
       by_project: [...projMap.values()].map(p => ({ ...p, agent_hours: round2(p.agent_hours), human_equiv_hours: round2(p.human_equiv_hours), cost_usd: round2(p.cost_usd) })),

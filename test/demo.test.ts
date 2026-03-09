@@ -76,8 +76,8 @@ describe('Demo seed', () => {
     const rawEntries = c.query({ from, to });
 
     const html = generateTimesheetHTML(ts, { dateRange: '2026-02-22 to 2026-03-08', rawEntries });
-    expect(html).toContain('Agent Runtime');
-    expect(html).toContain('Wall Clock');
+    expect(html).toContain('Runtime');
+    expect(html).toContain('timeline-card');
   });
 
   it('PDF report generates without error with runtime data', async () => {

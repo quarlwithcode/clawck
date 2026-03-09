@@ -1,8 +1,8 @@
 # Clawck v0.5
 
-**Time tracking for AI agents. Toggl for the agentic era.**
+**System of record for AI agent work.**
 
-Clawck is an open-source tool that tracks how long AI agents spend on tasks, projects, and client work - then shows you how much human-equivalent time and money they saved.
+Clawck tracks what AI agents do, how long it takes, and what it costs — then calculates the human-equivalent value. One source of truth for agent timesheets, billing, and ROI.
 
 Every service business runs on timesheets. AI agent businesses will too.
 
@@ -309,17 +309,20 @@ Edit `.clawck/config.json`:
 
 Config is validated on load. Invalid values produce clear error messages.
 
-## Surface Stability
+## Status
 
-| Surface | Status | Notes |
-|---------|--------|-------|
-| CLI commands | **Stable** | 31 commands, flag signatures locked |
-| REST API | **Stable** | 26 endpoints, request/response shapes locked |
+| Component | Status | Notes |
+|-----------|--------|-------|
+| Core tracking (start/stop/log) | **Stable** | Entry lifecycle locked |
 | MCP tools | **Stable** | 9 tools, input schemas locked |
+| REST API | **Stable** | 26 endpoints, request/response shapes locked |
+| CLI | **Stable** | 31 commands, flag signatures locked |
+| Platform Hooks | **Stable** | Claude, Gemini, Cursor, Cline, Windsurf, Codex |
+| Reports (terminal/HTML/PDF) | **Stable** | Calendar, Gantt, CSV export |
 | SQLite storage | **Stable** | Schema v5, migrations auto-applied |
 | ATP export/import | **Stable** | Spec v0.2.0 |
-| Webhooks | Experimental | Fire-and-forget, no retry/delivery guarantee |
 | Multi-agent sync | Experimental | Pull-mode only, no conflict resolution |
+| Webhooks | Experimental | Fire-and-forget, no retry/delivery guarantee |
 | Pricing estimation | Experimental | Model pricing table manually maintained |
 
 **Planned (not started):** Python SDK, auto-instrumentation, email digest, OpenTelemetry exporter, embeddable widget.

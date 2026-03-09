@@ -91,6 +91,12 @@ Report if your platform provides this data:
 - `tokens_out`: Output tokens generated this turn
 - `cost_usd`: Estimated cost in USD
 
+**Platform hooks** auto-extract tokens and cost from the stdin JSON that each platform sends on stop events. The adapter layer normalizes field names across platforms (e.g., `total_input_tokens`, `input_tokens`, `tokens_in` are all recognized).
+
+**MCP tool users** should pass `tokens_in`, `tokens_out`, and `cost_usd` explicitly when calling `clawck_stop_task`.
+
+**Verification**: Run `LOG_LEVEL=debug clawck hook stop` to see the extracted token/cost values in the debug output. You can also pipe test JSON: `echo '{"session_id":"test","total_input_tokens":5000}' | LOG_LEVEL=debug clawck hook stop`
+
 ## Edge Cases
 
 ### Errors / Failures
