@@ -204,6 +204,55 @@ program
     clawck.close();
   });
 
+// ─── Trends ───────────────────────────────────────────────
+
+program
+  .command('trends')
+  .description('Show category distribution trends per week')
+  .option('-d, --dir <path>', 'Data directory')
+  .option('--weeks <number>', 'Number of weeks to analyze', '4')
+  .action(async (opts) => {
+    const config = loadConfig(resolveDataDir(opts));
+    const clawck = await new Clawck(config).ready();
+
+    const weeks = parseInt(opts.weeks) || 4;
+    const trends = clawck.trends({ weeks });
+
+    if (program.opts().json) {
+      console.log(JSON.stringify(trends));
+      clawck.close();
+      return;
+    }
+
+    console.log(`\n  ⏱️🦀 Category Trends (${weeks} weeks)`);
+    console.log(`  ${'─'.repeat(60)}`);
+
+    if (trends.biggest_shift) {
+      const arrow = trends.biggest_shift.direction === 'up' ? '↑' : '↓';
+      const sign = trends.biggest_shift.delta_percent > 0 ? '+' : '';
+      console.log(`  📊 Biggest shift: ${trends.biggest_shift.category} ${arrow} ${sign}${trends.biggest_shift.delta_percent}%`);
+      console.log('');
+    }
+
+    for (const week of trends.weeks) {
+      console.log(`  📅 Week ${week.week_number} (${week.week_start} to ${week.week_end})`);
+      console.log(`     ${week.total_entries} entries, ${week.total_hours.toFixed(2)}h total`);
+
+      // Show top categories with percentage bars
+      const topCats = week.categories.filter(c => c.percentage > 0).slice(0, 5);
+      for (const cat of topCats) {
+        const bar = '█'.repeat(Math.round(cat.percentage / 5));
+        const deltaStr = cat.delta_percent !== null
+          ? ` (${cat.delta_percent > 0 ? '+' : ''}${cat.delta_percent}%)`
+          : '';
+        console.log(`     ${cat.category.padEnd(15)} ${bar.padEnd(20)} ${cat.percentage}%${deltaStr}`);
+      }
+      console.log('');
+    }
+
+    clawck.close();
+  });
+
 // ─── Report ───────────────────────────────────────────────
 
 const reportCmd = program

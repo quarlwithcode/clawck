@@ -422,3 +422,33 @@ export interface ProductivityScore {
   daily_average_hours: number;
   trend: 'up' | 'down' | 'stable';
 }
+
+// ─── Category Trends ──────────────────────────────────────
+
+export interface WeekTrend {
+  week_start: string;
+  week_end: string;
+  week_number: number;
+  categories: CategoryTrendEntry[];
+  total_entries: number;
+  total_hours: number;
+}
+
+export interface CategoryTrendEntry {
+  category: TaskCategory;
+  percentage: number;
+  hours: number;
+  entries: number;
+  delta_percent: number | null; // Change from previous week
+}
+
+export interface CategoryTrends {
+  period_start: string;
+  period_end: string;
+  weeks: WeekTrend[];
+  biggest_shift: {
+    category: TaskCategory;
+    delta_percent: number;
+    direction: 'up' | 'down';
+  } | null;
+}

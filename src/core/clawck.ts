@@ -8,7 +8,7 @@ import {
   ClawckEntry, ClawckConfig, ClawckStartInput, ClawckStopInput, ClawckLogInput,
   TimesheetSummary, SPEC_VERSION, DEFAULT_CONFIG, TrackingPattern, TaskCategory,
   StoredReport, ReportMetadata, ReportPeriod, ReportStyle, ReportFormat,
-  ProductivityScore, DayScore,
+  ProductivityScore, DayScore, CategoryTrends, WeekTrend, CategoryTrendEntry, TASK_CATEGORIES,
 } from './types';
 import { estimateCost } from './pricing';
 import { ClawckDB } from './database';
@@ -471,6 +471,121 @@ export class Clawck {
       total_entries: totalEntries,
       daily_average_hours: dailyAverageHours,
       trend: overallTrend,
+    };
+  }
+
+  // ─── Category Trends ───────────────────────────────────
+
+  trends(opts: { weeks?: number } = {}): CategoryTrends {
+    const weeks = opts.weeks || 4;
+    const now = new Date();
+    const to = now.toISOString();
+    const from = new Date(now.getTime() - weeks * 7 * 86400000).toISOString();
+
+    const entries = this._db.query({ from, to, limit: 10000 });
+
+    // Helper to get week number (Monday-Sunday)
+    const getWeekStart = (date: Date): Date => {
+      const d = new Date(date);
+      const day = d.getDay();
+      const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Adjust when Sunday
+      d.setDate(diff);
+      d.setHours(0, 0, 0, 0);
+      return d;
+    };
+
+    // Group entries by week
+    const weekMap = new Map<string, ClawckEntry[]>();
+    for (const e of entries) {
+      const weekStart = getWeekStart(new Date(e.start));
+      const weekKey = weekStart.toISOString().split('T')[0];
+      if (!weekMap.has(weekKey)) weekMap.set(weekKey, []);
+      weekMap.get(weekKey)!.push(e);
+    }
+
+    // Sort weeks chronologically
+    const sortedWeekKeys = Array.from(weekMap.keys()).sort();
+
+    // Build previous week percentages for delta calculation
+    const prevWeekPct = new Map<TaskCategory, number>();
+    const weekTrends: WeekTrend[] = [];
+
+    for (let i = 0; i < sortedWeekKeys.length; i++) {
+      const weekKey = sortedWeekKeys[i];
+      const weekEntries = weekMap.get(weekKey) || [];
+      const weekStart = new Date(weekKey);
+      const weekEnd = new Date(weekStart.getTime() + 6 * 86400000);
+
+      // Calculate hours and entries per category
+      const catData = new Map<TaskCategory, { hours: number; entries: number }>();
+      let totalHours = 0;
+
+      for (const e of weekEntries) {
+        const cat = e.category;
+        const hours = (e.agent_runtime_ms ?? e.wall_clock_ms ?? 0) / 3600000;
+        totalHours += hours;
+
+        if (!catData.has(cat)) catData.set(cat, { hours: 0, entries: 0 });
+        const d = catData.get(cat)!;
+        d.hours += hours;
+        d.entries += 1;
+      }
+
+      // Build category entries with percentages and deltas
+      const categories: CategoryTrendEntry[] = [];
+      for (const cat of TASK_CATEGORIES) {
+        const data = catData.get(cat) || { hours: 0, entries: 0 };
+        const percentage = totalHours > 0 ? Math.round((data.hours / totalHours) * 100) : 0;
+        const prevPct = prevWeekPct.get(cat);
+        const deltaPct = prevPct !== undefined ? percentage - prevPct : null;
+
+        categories.push({
+          category: cat,
+          percentage,
+          hours: Math.round(data.hours * 100) / 100,
+          entries: data.entries,
+          delta_percent: deltaPct,
+        });
+
+        // Update prev for next iteration
+        prevWeekPct.set(cat, percentage);
+      }
+
+      // Sort categories by percentage descending
+      categories.sort((a, b) => b.percentage - a.percentage);
+
+      weekTrends.push({
+        week_start: weekKey,
+        week_end: weekEnd.toISOString().split('T')[0],
+        week_number: i + 1,
+        categories,
+        total_entries: weekEntries.length,
+        total_hours: Math.round(totalHours * 100) / 100,
+      });
+    }
+
+    // Find biggest shift (only consider weeks with previous data)
+    let biggestShift: CategoryTrends['biggest_shift'] = null;
+    let maxAbsDelta = 0;
+
+    for (const week of weekTrends) {
+      for (const cat of week.categories) {
+        if (cat.delta_percent !== null && Math.abs(cat.delta_percent) > maxAbsDelta) {
+          maxAbsDelta = Math.abs(cat.delta_percent);
+          biggestShift = {
+            category: cat.category,
+            delta_percent: cat.delta_percent,
+            direction: cat.delta_percent > 0 ? 'up' : 'down',
+          };
+        }
+      }
+    }
+
+    return {
+      period_start: from,
+      period_end: to,
+      weeks: weekTrends,
+      biggest_shift: biggestShift,
     };
   }
 
