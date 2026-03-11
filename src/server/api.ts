@@ -176,6 +176,47 @@ export async function createServer(config: Partial<ClawckConfig> = {}): Promise<
     res.json(digest);
   });
 
+  // ─── Share Card ─────────────────────────────────────────
+
+  app.get('/api/share', async (req, res) => {
+    const { generateDigestCard, generateTimesheetCard } = await import('../reports/share-card');
+
+    const type = (req.query.type as string) || 'digest';
+    const theme = (req.query.theme as 'light' | 'dark' | 'gradient') || 'gradient';
+    const title = req.query.title as string | undefined;
+    const branding = req.query.branding !== 'false';
+
+    const cardOpts = { title, theme, branding };
+
+    let card;
+    if (type === 'timesheet') {
+      const days = safeInt(req.query.days as string, 7);
+      const to = new Date().toISOString();
+      const from = new Date(Date.now() - days * 86400000).toISOString();
+      const summary = clawck.timesheet(from, to);
+      card = generateTimesheetCard(summary, cardOpts);
+    } else {
+      const period = (req.query.period as 'day' | 'week') || 'day';
+      const date = req.query.date as string | undefined;
+      const digest = clawck.digest({ period, date });
+      card = generateDigestCard(digest, cardOpts);
+    }
+
+    // Return HTML or JSON metadata based on Accept header
+    if (req.accepts('html')) {
+      res.setHeader('Content-Type', 'text/html');
+      res.send(card.html);
+    } else {
+      res.json({
+        width: card.width,
+        height: card.height,
+        title: card.title,
+        description: card.description,
+        html: card.html,
+      });
+    }
+  });
+
   // ─── Timesheet ─────────────────────────────────────────
 
   app.get('/api/timesheet', (req, res) => {

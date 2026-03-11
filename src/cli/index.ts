@@ -332,6 +332,75 @@ program
     clawck.close();
   });
 
+// ─── Share ──────────────────────────────────────────────
+
+program
+  .command('share')
+  .description('Generate a shareable HTML card for social media')
+  .option('-d, --dir <path>', 'Data directory')
+  .option('--type <type>', 'Card type (digest, timesheet)', 'digest')
+  .option('--period <type>', 'Digest period (day, week)', 'day')
+  .option('--days <number>', 'Days for timesheet card', '7')
+  .option('--theme <theme>', 'Card theme (light, dark, gradient)', 'gradient')
+  .option('--title <text>', 'Custom card title')
+  .option('--no-branding', 'Remove Clawck branding')
+  .option('-o, --output <path>', 'Output file path')
+  .action(async (opts) => {
+    const config = loadConfig(resolveDataDir(opts));
+    const clawck = await new Clawck(config).ready();
+
+    const { generateDigestCard, generateTimesheetCard } = await import('../reports/share-card');
+
+    let card;
+    const cardOpts = {
+      title: opts.title,
+      theme: opts.theme as 'light' | 'dark' | 'gradient',
+      branding: opts.branding,
+    };
+
+    if (opts.type === 'timesheet') {
+      const days = parseInt(opts.days) || 7;
+      const to = new Date().toISOString();
+      const from = new Date(Date.now() - days * 86400000).toISOString();
+      const summary = clawck.timesheet(from, to);
+      card = generateTimesheetCard(summary, cardOpts);
+    } else {
+      const period = (opts.period === 'week' ? 'week' : 'day') as 'day' | 'week';
+      const digest = clawck.digest({ period });
+      card = generateDigestCard(digest, cardOpts);
+    }
+
+    const today = new Date().toISOString().split('T')[0];
+    const outputPath = opts.output || `clawck-share-${today}.html`;
+
+    fs.writeFileSync(outputPath, card.html);
+
+    if (program.opts().json) {
+      console.log(JSON.stringify({
+        ok: true,
+        path: path.resolve(outputPath),
+        width: card.width,
+        height: card.height,
+        title: card.title,
+        description: card.description,
+      }));
+    } else {
+      console.log(`\n  ⏱️🦀 Share Card Generated!`);
+      console.log(`  ├─ File:        ${path.resolve(outputPath)}`);
+      console.log(`  ├─ Size:        ${card.width}x${card.height}px`);
+      console.log(`  ├─ Title:       ${card.title}`);
+      console.log(`  ├─ Description: ${card.description}`);
+      console.log(`  │`);
+      console.log(`  │  To create an image:`);
+      console.log(`  │  1. Open the HTML file in a browser`);
+      console.log(`  │  2. Take a screenshot (1200x630 for social media)`);
+      console.log(`  │  3. Or use a tool like playwright/puppeteer for automation`);
+      console.log(`  └─ Done!\n`);
+    }
+
+    clawck.close();
+  });
+
 // ─── Report ───────────────────────────────────────────────
 
 const reportCmd = program
