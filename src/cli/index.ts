@@ -1041,6 +1041,154 @@ program
     clawck.close();
   });
 
+// ─── Backup ──────────────────────────────────────────────
+
+program
+  .command('backup')
+  .description('Backup database and config to a .tar.gz archive')
+  .option('-d, --dir <path>', 'Data directory')
+  .option('-o, --output <path>', 'Output path for backup file')
+  .action(async (opts) => {
+    const dataDir = path.resolve(resolveDataDir(opts));
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const outputPath = opts.output || `clawck-backup-${timestamp}.tar.gz`;
+
+    const dbPath = path.join(dataDir, 'clawck.db');
+    const configPath = path.join(dataDir, 'config.json');
+
+    // Verify at least the database exists
+    if (!fs.existsSync(dbPath)) {
+      console.error(`  Database not found: ${dbPath}`);
+      console.error('  Run "clawck init" first to create a Clawck directory.');
+      process.exit(1);
+    }
+
+    // Load entries for JSONL export
+    const config = loadConfig(dataDir);
+    const clawck = await new Clawck(config).ready();
+    const entries = clawck.query({ limit: 100000 });
+    const stats = clawck.stats();
+    clawck.close();
+
+    // Create temporary entries.jsonl
+    const tmpDir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'clawck-backup-'));
+    const jsonlPath = path.join(tmpDir, 'entries.jsonl');
+    const jsonlContent = entries.map(e => JSON.stringify(e)).join('\n');
+    fs.writeFileSync(jsonlPath, jsonlContent);
+
+    // Copy db and config to temp dir
+    fs.copyFileSync(dbPath, path.join(tmpDir, 'clawck.db'));
+    if (fs.existsSync(configPath)) {
+      fs.copyFileSync(configPath, path.join(tmpDir, 'config.json'));
+    }
+
+    // Create tar.gz using tar command
+    const { execSync } = require('child_process');
+    const absOutput = path.resolve(outputPath);
+    execSync(`tar -czf "${absOutput}" -C "${tmpDir}" .`, { stdio: 'pipe' });
+
+    // Get file size
+    const backupStats = fs.statSync(absOutput);
+    const sizeKb = (backupStats.size / 1024).toFixed(1);
+
+    // Cleanup temp dir
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+
+    if (program.opts().json) {
+      console.log(JSON.stringify({
+        ok: true,
+        path: absOutput,
+        size_bytes: backupStats.size,
+        entry_count: stats.total_entries,
+      }));
+    } else {
+      console.log(`\n  ⏱️🦀 Backup created!`);
+      console.log(`  ├─ File:    ${absOutput}`);
+      console.log(`  ├─ Size:    ${sizeKb} KB`);
+      console.log(`  ├─ Entries: ${stats.total_entries}`);
+      console.log(`  └─ Use "clawck restore ${path.basename(absOutput)}" to restore.\n`);
+    }
+  });
+
+// ─── Restore ─────────────────────────────────────────────
+
+program
+  .command('restore <backup-path>')
+  .description('Restore database and config from a .tar.gz backup')
+  .option('-d, --dir <path>', 'Data directory')
+  .option('--force', 'Skip confirmation prompt')
+  .action(async (backupPath, opts) => {
+    const dataDir = path.resolve(resolveDataDir(opts));
+    const absBackup = path.resolve(backupPath);
+
+    if (!fs.existsSync(absBackup)) {
+      console.error(`  Backup file not found: ${absBackup}`);
+      process.exit(1);
+    }
+
+    // Check if data dir exists and has data
+    const existingDb = path.join(dataDir, 'clawck.db');
+    const hasExistingData = fs.existsSync(existingDb);
+
+    // Confirmation prompt unless --force
+    if (hasExistingData && !opts.force) {
+      const readline = require('readline');
+      const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+
+      const answer = await new Promise<string>((resolve) => {
+        rl.question(`  Existing data found in ${dataDir}. Overwrite? (y/N) `, resolve);
+      });
+      rl.close();
+
+      if (answer.toLowerCase() !== 'y' && answer.toLowerCase() !== 'yes') {
+        console.log('  Restore cancelled.');
+        process.exit(0);
+      }
+    }
+
+    // Create data directory if needed
+    if (!fs.existsSync(dataDir)) {
+      fs.mkdirSync(dataDir, { recursive: true });
+    }
+
+    // Extract backup
+    const { execSync } = require('child_process');
+    execSync(`tar -xzf "${absBackup}" -C "${dataDir}"`, { stdio: 'pipe' });
+
+    // Verify restored files
+    const restoredDb = fs.existsSync(path.join(dataDir, 'clawck.db'));
+    const restoredConfig = fs.existsSync(path.join(dataDir, 'config.json'));
+    const restoredJsonl = fs.existsSync(path.join(dataDir, 'entries.jsonl'));
+
+    // Count entries in restored database
+    let entryCount = 0;
+    if (restoredDb) {
+      const config = loadConfig(dataDir);
+      const clawck = await new Clawck(config).ready();
+      entryCount = clawck.stats().total_entries;
+      clawck.close();
+    }
+
+    if (program.opts().json) {
+      console.log(JSON.stringify({
+        ok: true,
+        restored: {
+          database: restoredDb,
+          config: restoredConfig,
+          jsonl: restoredJsonl,
+        },
+        entry_count: entryCount,
+      }));
+    } else {
+      console.log(`\n  ⏱️🦀 Restore complete!`);
+      console.log(`  ├─ Directory: ${dataDir}`);
+      console.log(`  ├─ Database:  ${restoredDb ? '✓' : '✗'}`);
+      console.log(`  ├─ Config:    ${restoredConfig ? '✓' : '✗'}`);
+      console.log(`  ├─ JSONL:     ${restoredJsonl ? '✓' : '✗'}`);
+      console.log(`  └─ Entries:   ${entryCount}\n`);
+    }
+  });
+
 // ─── List ───────────────────────────────────────────────
 
 program
