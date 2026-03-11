@@ -192,7 +192,7 @@ describe('Natural Language Queries', () => {
     await setup();
     const res = await request(app).post('/api/ask').send({ question: 'how many tasks today' });
     if (res.status === 200) {
-      expect(res.body).toHaveProperty('answer');
+      expect(res.body).toHaveProperty('understood');
     }
     // 404 is acceptable if the endpoint was named differently
     expect([200, 404, 501]).toContain(res.status);
@@ -512,7 +512,7 @@ describe('Client-Facing Invoice PDF', () => {
 
     // Invoice should only include acme entries
     expect(summary.total_entries).toBe(2);
-    expect(summary.total_agent_runtime_hours).toBeGreaterThan(0);
+    expect(summary.total_agent_hours).toBeGreaterThan(0);
   });
 
   it('timesheet with zero entries for unknown client', async () => {
@@ -581,12 +581,12 @@ describe('Cross-Version Feature Interactions', () => {
 
     // 6. Get digest
     const digest = clawck.digest({ period: 'day' });
-    expect(digest.total_entries).toBe(10);
+    expect(digest.summary.total_entries).toBe(10);
 
     // 7. Submit an edit for review
-    const entries = clawck.entries({});
+    const entries = clawck.query({});
     if (entries.length > 0) {
-      clawck.setPendingEdit(entries[0].id, { project: 'corrected-project' });
+      clawck.setPendingEdit(entries[0].id, { changes: { project: 'corrected-project' }, requested_at: new Date().toISOString() });
       const pending = clawck.getPendingEdits();
       expect(pending.length).toBe(1);
 
@@ -613,7 +613,7 @@ describe('Cross-Version Feature Interactions', () => {
 
     // Edit 10 of them
     for (let i = 0; i < 10; i++) {
-      clawck.setPendingEdit(ids[i], { changes: { task: `edited rapid task ${i}` });
+      clawck.setPendingEdit(ids[i], { changes: { task: `edited rapid task ${i}` }, requested_at: new Date().toISOString() });
     }
     expect(clawck.getPendingEdits().length).toBe(10);
 

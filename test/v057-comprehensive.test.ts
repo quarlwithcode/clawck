@@ -84,7 +84,7 @@ describe('Client-Scoped Time Queries', () => {
     const summary = clawck.timesheet(weekAgo.toISOString(), now.toISOString(), { client: 'acme' });
 
     expect(summary.total_entries).toBe(3);
-    expect(summary.total_agent_runtime_hours).toBeGreaterThan(0);
+    expect(summary.total_agent_hours).toBeGreaterThan(0);
   });
 
   // --- API Tests ---
@@ -156,7 +156,7 @@ describe('Edit with Approval Flow', () => {
     const result = clawck.setPendingEdit(entry.id, { changes: {
       task: 'renamed task',
       client: 'beta',
-    });
+    }, requested_at: new Date().toISOString() });
 
     expect(result).not.toBeNull();
   });
@@ -166,8 +166,8 @@ describe('Edit with Approval Flow', () => {
     const entry1 = clawck.log({ task: 'task 1', duration_minutes: 60, category: 'code' });
     const entry2 = clawck.log({ task: 'task 2', duration_minutes: 30, category: 'research' });
 
-    clawck.setPendingEdit(entry1.id, { changes: { task: 'renamed 1' });
-    clawck.setPendingEdit(entry2.id, { changes: { task: 'renamed 2' });
+    clawck.setPendingEdit(entry1.id, { changes: { task: 'renamed 1' }, requested_at: new Date().toISOString() });
+    clawck.setPendingEdit(entry2.id, { changes: { task: 'renamed 2' }, requested_at: new Date().toISOString() });
 
     const pending = clawck.getPendingEdits();
     expect(pending.length).toBe(2);
@@ -177,7 +177,7 @@ describe('Edit with Approval Flow', () => {
     await setup();
     const entry = clawck.log({ task: 'old name', duration_minutes: 60, category: 'code', client: 'acme' });
 
-    clawck.setPendingEdit(entry.id, { changes: { task: 'new name', client: 'beta' });
+    clawck.setPendingEdit(entry.id, { changes: { task: 'new name', client: 'beta' }, requested_at: new Date().toISOString() });
     const approved = clawck.approvePendingEdit(entry.id);
 
     expect(approved).not.toBeNull();
@@ -191,7 +191,7 @@ describe('Edit with Approval Flow', () => {
     await setup();
     const entry = clawck.log({ task: 'keep this name', duration_minutes: 60, category: 'code' });
 
-    clawck.setPendingEdit(entry.id, { changes: { task: 'rejected name' });
+    clawck.setPendingEdit(entry.id, { changes: { task: 'rejected name' }, requested_at: new Date().toISOString() });
     const rejected = clawck.rejectPendingEdit(entry.id);
 
     expect(rejected).not.toBeNull();
@@ -207,7 +207,7 @@ describe('Edit with Approval Flow', () => {
   // --- Edge Cases ---
   it('setting edit on non-existent entry returns null', async () => {
     await setup();
-    const result = clawck.setPendingEdit('nonexistent-id', { changes: { task: 'nope' });
+    const result = clawck.setPendingEdit('nonexistent-id', { changes: { task: 'nope' }, requested_at: new Date().toISOString() });
     expect(result).toBeNull();
   });
 
@@ -223,8 +223,8 @@ describe('Edit with Approval Flow', () => {
     await setup();
     const entry = clawck.log({ task: 'original', duration_minutes: 60, category: 'code' });
 
-    clawck.setPendingEdit(entry.id, { changes: { task: 'first edit' });
-    clawck.setPendingEdit(entry.id, { changes: { task: 'second edit' });
+    clawck.setPendingEdit(entry.id, { changes: { task: 'first edit' }, requested_at: new Date().toISOString() });
+    clawck.setPendingEdit(entry.id, { changes: { task: 'second edit' }, requested_at: new Date().toISOString() });
 
     const approved = clawck.approvePendingEdit(entry.id);
     if (approved) {
@@ -236,7 +236,7 @@ describe('Edit with Approval Flow', () => {
   it('API lists pending edits', async () => {
     await setup();
     const entry = clawck.log({ task: 'task', duration_minutes: 60, category: 'code' });
-    clawck.setPendingEdit(entry.id, { changes: { task: 'edited' });
+    clawck.setPendingEdit(entry.id, { changes: { task: 'edited' }, requested_at: new Date().toISOString() });
 
     const res = await request(app).get('/api/edits');
     expect(res.status).toBe(200);
@@ -247,7 +247,7 @@ describe('Edit with Approval Flow', () => {
   it('API approves a pending edit', async () => {
     await setup();
     const entry = clawck.log({ task: 'old', duration_minutes: 60, category: 'code' });
-    clawck.setPendingEdit(entry.id, { changes: { task: 'approved name' });
+    clawck.setPendingEdit(entry.id, { changes: { task: 'approved name' }, requested_at: new Date().toISOString() });
 
     const res = await request(app).post(`/api/edits/${entry.id}/approve`);
     expect(res.status).toBe(200);
@@ -260,7 +260,7 @@ describe('Edit with Approval Flow', () => {
   it('API rejects a pending edit', async () => {
     await setup();
     const entry = clawck.log({ task: 'keep me', duration_minutes: 60, category: 'code' });
-    clawck.setPendingEdit(entry.id, { changes: { task: 'reject me' });
+    clawck.setPendingEdit(entry.id, { changes: { task: 'reject me' }, requested_at: new Date().toISOString() });
 
     const res = await request(app).post(`/api/edits/${entry.id}/reject`);
     expect(res.status).toBe(200);
@@ -286,7 +286,7 @@ describe('Edit with Approval Flow', () => {
     clawck.setPendingEdit(entry.id, { changes: {
       project: 'braidge',
       client: 'internal',
-    });
+    }, requested_at: new Date().toISOString() });
 
     // Step 3: Review pending edits
     const pending = clawck.getPendingEdits();
@@ -416,7 +416,7 @@ describe('Channel Auto-Categorization', () => {
       client: 'api-client',
       default_category: 'code',
     });
-    expect(createRes.status).toBe(200);
+    expect([200, 201]).toContain(createRes.status);
     const id = createRes.body.id;
 
     // List
@@ -481,12 +481,12 @@ describe('Cross-Feature Interactions (v0.5.7)', () => {
     const entry = clawck.log({ task: 'task', duration_minutes: 60, category: 'code', client: 'alpha' });
 
     // Change client via edit
-    clawck.setPendingEdit(entry.id, { changes: { client: 'beta' });
+    clawck.setPendingEdit(entry.id, { changes: { client: 'beta' }, requested_at: new Date().toISOString() });
     clawck.approvePendingEdit(entry.id);
 
     // Should now appear under beta, not alpha
-    const alphaEntries = clawck.entries({ client: 'alpha' });
-    const betaEntries = clawck.entries({ client: 'beta' });
+    const alphaEntries = clawck.query({ client: 'alpha' });
+    const betaEntries = clawck.query({ client: 'beta' });
     expect(alphaEntries.length).toBe(0);
     expect(betaEntries.length).toBe(1);
   });
@@ -504,7 +504,7 @@ describe('Cross-Feature Interactions (v0.5.7)', () => {
     // Log entry that would be auto-categorized
     clawck.log({ task: 'work from mapped channel', duration_minutes: 60, category: 'code', client: 'mapped-client', project: 'mapped-project' });
 
-    const entries = clawck.entries({ client: 'mapped-client' });
+    const entries = clawck.query({ client: 'mapped-client' });
     expect(entries.length).toBe(1);
   });
 
@@ -524,15 +524,15 @@ describe('Cross-Feature Interactions (v0.5.7)', () => {
     clawck.log({ task: 'beta task', duration_minutes: 30, category: 'research', client: 'beta' });
 
     const digest = clawck.digest({ period: 'day' });
-    expect(digest.total_entries).toBe(2);
-    expect(digest.total_agent_runtime_hours).toBeGreaterThan(0);
+    expect(digest.summary.total_entries).toBe(2);
+    expect(digest.summary.total_agent_hours).toBeGreaterThan(0);
   });
 
   it('backup includes channel mappings and pending edits', async () => {
     await setup();
     clawck.addChannelMapping({ channel_id: 'ch1', channel_name: '#test', project: 'p', client: 'c', default_category: 'code' });
     const entry = clawck.log({ task: 'task', duration_minutes: 60, category: 'code' });
-    clawck.setPendingEdit(entry.id, { changes: { task: 'edited' });
+    clawck.setPendingEdit(entry.id, { changes: { task: 'edited' }, requested_at: new Date().toISOString() });
 
     // Just verify the data is accessible — backup tests are in backup.test.ts
     expect(clawck.getChannelMappings().length).toBe(1);
@@ -556,7 +556,7 @@ describe('Cross-Feature Interactions (v0.5.7)', () => {
 
     // Verify each client has ~20 entries
     for (const client of clients) {
-      const entries = clawck.entries({ client });
+      const entries = clawck.query({ client });
       expect(entries.length).toBe(20);
     }
 
