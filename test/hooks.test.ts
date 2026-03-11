@@ -402,7 +402,8 @@ describe('install configs', () => {
     expect(PLATFORM_NAMES).toContain('cline');
     expect(PLATFORM_NAMES).toContain('windsurf');
     expect(PLATFORM_NAMES).toContain('codex');
-    expect(PLATFORM_NAMES.length).toBe(6);
+    expect(PLATFORM_NAMES).toContain('openclaw');
+    expect(PLATFORM_NAMES.length).toBe(7);
   });
 });
 

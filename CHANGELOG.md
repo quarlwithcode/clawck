@@ -5,6 +5,45 @@ All notable changes to Clawck are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Clawck uses [Semantic Versioning](https://semver.org/).
 
+## [0.5.7] - 2026-03-11
+
+### Added
+- **Client-Scoped Time Queries** — `clawck timesheet <client>` command
+  - `--days`, `--weekly`, `--monthly` flags for date range
+  - `--redact` flag to replace task descriptions with category labels
+  - `--summary-only` flag to hide individual entries
+  - API: `GET /api/timesheet` with `client`, `days`, `redact`, `summary_only` query params
+- **Abstracted/Privacy Reports** — privacy controls for client-facing output
+  - `--redact` flag on `report`, `list`, `export` commands
+  - `--summary-only` flag on `timesheet` command
+- **Platform-Aware Output Formatting** — `--format discord|slack|telegram|markdown`
+  - Discord: 2000 char limit, emoji syntax
+  - Slack: mrkdwn format with `*bold*` and code blocks
+  - Telegram: HTML format with `<b>`, `<code>`, `<i>` tags
+  - Markdown: standard GFM tables and formatting
+  - Applies to `report`, `score`, `digest` commands
+- **Entry Edit with Approval Flow** — pending edits system
+  - `clawck edit --needs-approval` queues changes for review
+  - `clawck edits` command to list, approve, reject pending edits
+  - API: `GET /api/edits`, `POST /api/edits/:id/approve`, `POST /api/edits/:id/reject`
+  - Schema migration 6: `edit_pending` column, `pending_edits` column
+- **Channel & Memory-Aware Auto-Categorization**
+  - `clawck channel list|add|update|delete` commands
+  - Auto-fill project/client/category from channel_mappings when `channel_id` in hook context
+  - `category_keywords` config for keyword-based category detection
+  - API: `GET /api/channels`, `POST /api/channels`, `PATCH /api/channels/:id`, `DELETE /api/channels/:id`
+  - Schema migration 6: `channel_mappings` table
+
+### Changed
+- Schema version: 6 (added pending edits and channel mappings)
+
+### Tests
+- 326 passing tests
+
+### Internal
+- Spec version: 0.2.0 (unchanged)
+- Added missing openclaw entry to PLATFORMS Record
+
 ## [0.5.6] - 2026-03-11
 
 ### Added

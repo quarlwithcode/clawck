@@ -1,4 +1,4 @@
-# Clawck v0.6
+# Clawck v0.5.7
 
 **System of record for AI agent work.**
 
@@ -6,7 +6,15 @@ Clawck tracks what AI agents do, how long it takes, and what it costs — then c
 
 Every service business runs on timesheets. AI agent businesses will too.
 
-## What's New in 0.6
+## What's New in 0.5.7
+
+- **Client-Scoped Timesheets** — `clawck timesheet <client>` for invoice-ready reports
+- **Privacy Reports** — `--redact` and `--summary-only` flags for client-facing output
+- **Platform Formatters** — `--format discord|slack|telegram|markdown` output
+- **Edit Approval Flow** — `clawck edits` for pending changes requiring review
+- **Channel Auto-Categorization** — `clawck channel` maps chat channels to projects/clients
+
+### Previous (0.5.6)
 
 - **Productivity Scoring** — `clawck score` for daily utilization and trends
 - **Category Trends** — `clawck trends` for weekly work distribution analysis
@@ -52,9 +60,13 @@ clawck report --format html
 
 - **Time tracking** - Start/stop timers or log completed tasks retroactively
 - **Human-equivalent calculations** - Configurable multipliers estimate how long a human would take
+- **Client timesheets** - `clawck timesheet <client>` for invoice-ready reports with privacy options
 - **Tracking patterns** - Reusable task templates (code-review, research, testing, etc.)
 - **Approval workflow** - Mark entries as approved for billing/invoicing
+- **Edit approval flow** - Queue changes for review with `--needs-approval`
+- **Channel mappings** - Auto-categorize entries based on Discord/Slack channels
 - **Reports** - Terminal, PDF, and interactive HTML reports with calendar, table, Gantt, and CSV views
+- **Platform formatters** - Output for Discord, Slack, Telegram, Markdown
 - **Dashboard** - Real-time web dashboard with stats, entries, and breakdowns
 - **MCP server** - Works with Claude Code, Cline, Cursor, Windsurf via stdio
 - **REST API** - Full CRUD API for any agent framework
