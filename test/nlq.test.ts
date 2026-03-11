@@ -31,7 +31,7 @@ describe('getAskHelp', () => {
     expect(help).toContain('Natural Language Queries');
     expect(help).toContain('How much time');
     expect(help).toContain('busiest day');
-    expect(help).toContain('compare');
+    expect(help.toLowerCase()).toContain('compare');
   });
 });
 

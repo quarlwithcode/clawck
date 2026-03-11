@@ -124,10 +124,11 @@ function parseTimeReference(text: string): DateRange | null {
 function extractProjectOrClient(text: string, field: 'project' | 'client'): string | null {
   const lower = text.toLowerCase();
 
-  // Patterns like "on project X", "for client Y"
+  // Patterns like "on project X", "for client Y", "on client Y"
+  // Project patterns must exclude "on client" which is for client extraction
   const patterns = field === 'project'
-    ? [/\bon\s+(?:project\s+)?['""]?([a-zA-Z0-9_-]+)['""]?/i, /\bproject\s+['""]?([a-zA-Z0-9_-]+)['""]?/i]
-    : [/\bfor\s+(?:client\s+)?['""]?([a-zA-Z0-9_-]+)['""]?/i, /\bclient\s+['""]?([a-zA-Z0-9_-]+)['""]?/i];
+    ? [/\bon\s+project\s+['""]?([a-zA-Z0-9_-]+)['""]?/i, /\bproject\s+['""]?([a-zA-Z0-9_-]+)['""]?/i]
+    : [/\bon\s+client\s+['""]?([a-zA-Z0-9_-]+)['""]?/i, /\bfor\s+(?:client\s+)?['""]?([a-zA-Z0-9_-]+)['""]?/i, /\bclient\s+['""]?([a-zA-Z0-9_-]+)['""]?/i];
 
   for (const pattern of patterns) {
     const match = text.match(pattern);

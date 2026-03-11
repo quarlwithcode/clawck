@@ -236,6 +236,7 @@ export class ClawckDB {
     const fields: string[] = [];
     const values: any[] = [];
     const changedFields: string[] = [];
+    if ((updates as any).start !== undefined) { fields.push('start = ?'); values.push((updates as any).start); changedFields.push('start'); }
     if (updates.end !== undefined) { fields.push('end_ = ?'); values.push(updates.end); changedFields.push('end'); }
     if (updates.status !== undefined) { fields.push('status = ?'); values.push(updates.status); changedFields.push('status'); }
     if (updates.tokens_in !== undefined) { fields.push('tokens_in = ?'); values.push(updates.tokens_in); changedFields.push('tokens_in'); }

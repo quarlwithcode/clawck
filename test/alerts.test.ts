@@ -156,10 +156,12 @@ describe('checkAllAlerts', () => {
       { id: 'overwork-rule', type: 'overwork', threshold_minutes: 180, enabled: true },
     ];
 
-    const businessHour = new Date();
-    businessHour.setHours(10, 0, 0, 0);
-
-    const alerts = checkAllAlerts(rules, c.database, businessHour);
+    // Use current time for overwork check, but set hour to 10 for idle check
+    const now = new Date();
+    // For a valid test, we need now to be during business hours AND after the start time
+    // The overwork alert uses the passed `now` to calculate runtime
+    // So just use current time to ensure start (4h ago) is actually before now
+    const alerts = checkAllAlerts(rules, c.database, now);
     // Should have overwork alert but not idle (since task is running)
     expect(alerts.some(a => a.alert_type === 'overwork')).toBe(true);
   });

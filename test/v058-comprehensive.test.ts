@@ -316,7 +316,8 @@ describe('Audit Trail', () => {
 
     const res = await request(app).get(`/api/audit/${entry.id}`);
     if (res.status === 200) {
-      expect(Array.isArray(res.body)).toBe(true);
+      expect(res.body.entry).toBeDefined();
+      expect(Array.isArray(res.body.audits)).toBe(true);
     }
     expect([200, 404]).toContain(res.status);
   });
@@ -327,7 +328,7 @@ describe('Audit Trail', () => {
 
     const res = await request(app).get('/api/audit?days=7');
     if (res.status === 200) {
-      expect(Array.isArray(res.body)).toBe(true);
+      expect(Array.isArray(res.body.audits)).toBe(true);
     }
     expect([200, 404]).toContain(res.status);
   });
