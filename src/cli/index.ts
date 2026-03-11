@@ -19,7 +19,7 @@ import { startServer } from '../server/api';
 import { startMCPServer } from '../server/mcp';
 import { Clawck } from '../core/clawck';
 import { validateConfig } from '../core/config';
-import { DEFAULT_CONFIG, ClawckConfig, ClawckEntry, DEFAULT_HUMAN_EQUIVALENTS, TrackingPattern, SPEC_VERSION, APP_VERSION } from '../core/types';
+import { DEFAULT_CONFIG, ClawckConfig, ClawckEntry, DEFAULT_HUMAN_EQUIVALENTS, TrackingPattern, SPEC_VERSION, APP_VERSION, ReportBranding } from '../core/types';
 import { generateTimesheetPDF } from '../reports/pdf';
 import { generateTimesheetHTML } from '../reports/html';
 import { resolvePeriod } from '../reports/periods';
@@ -684,6 +684,12 @@ const reportCmd = program
   .option('--summary-only', 'Show only project/client totals')
   .option('--save', 'Save report to database')
   .option('--name <name>', 'Name for saved report')
+  // White-label branding options
+  .option('--company <name>', 'Company name for white-label branding')
+  .option('--logo <path>', 'Path to logo image for branding')
+  .option('--primary-color <hex>', 'Primary brand color (hex, e.g., #1a73e8)')
+  .option('--footer <text>', 'Custom footer text')
+  .option('--hide-branding', 'Hide Clawck branding from reports')
   .action(async (opts) => {
     const config = loadConfig(resolveDataDir(opts));
     const clawck = await new Clawck(config).ready();
@@ -709,12 +715,27 @@ const reportCmd = program
     const periodLabel = opts.period || (opts.days ? `${opts.days} days` : period);
     let reportContent = '';
 
+    // Build branding object from options
+    const branding: any = {};
+    if (opts.company) branding.company_name = opts.company;
+    if (opts.logo) branding.logo_path = opts.logo;
+    if (opts.primaryColor) branding.primary_color = opts.primaryColor;
+    if (opts.footer) branding.footer_text = opts.footer;
+    if (opts.hideBranding) branding.hide_clawck_branding = true;
+    const hasBranding = Object.keys(branding).length > 0;
+
     if (opts.format === 'html') {
       const today = new Date().toISOString().split('T')[0];
       const outputPath = opts.output || `clawck-report-${today}.html`;
       const dateRange = `${from.split('T')[0]} to ${to.split('T')[0]}`;
       const rawEntries = clawck.query({ from, to, client: opts.client, project: opts.project, agent: opts.agent, limit: 10000 });
-      const html = generateTimesheetHTML(ts, { dateRange, clientName: opts.client, rawEntries, style });
+      const html = generateTimesheetHTML(ts, {
+        dateRange,
+        clientName: opts.client,
+        rawEntries,
+        style,
+        branding: hasBranding ? branding : undefined,
+      });
       reportContent = html;
       fs.writeFileSync(outputPath, html);
       console.log(`  HTML report saved to: ${outputPath}`);
@@ -727,6 +748,7 @@ const reportCmd = program
         dateRange,
         outputPath,
         style,
+        branding: hasBranding ? branding : undefined,
       });
       reportContent = fs.readFileSync(outputPath).toString('base64');
       console.log(`  PDF report saved to: ${outputPath}`);
