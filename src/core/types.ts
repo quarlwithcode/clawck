@@ -181,6 +181,9 @@ export interface ClawckConfig {
 
   /** Keywords mapping to auto-detect category from task description */
   category_keywords?: Record<TaskCategory, string[]>;
+
+  /** Alert rules for idle/overwork notifications */
+  alerts?: AlertRule[];
 }
 
 export interface RemoteSource {
@@ -212,12 +215,37 @@ export interface TrackingPattern {
 
 // ─── Webhooks ────────────────────────────────────────────
 
-export type WebhookEvent = 'task_completed' | 'task_failed' | 'idle_alert';
+export type WebhookEvent = 'task_completed' | 'task_failed' | 'idle_alert' | 'overwork_alert';
 
 export interface WebhookConfig {
   url: string;
   events: WebhookEvent[];
   headers?: Record<string, string>;
+}
+
+// ─── Alert Rules ─────────────────────────────────────────
+
+export type AlertType = 'idle' | 'overwork';
+
+export interface AlertRule {
+  id: string;
+  type: AlertType;
+  threshold_minutes: number;
+  webhook_url?: string;
+  channels?: string[];  // Slack/Discord channel IDs
+  business_hours_start?: number;  // 0-23, default 9
+  business_hours_end?: number;    // 0-23, default 17
+  enabled?: boolean;
+}
+
+export interface TriggeredAlert {
+  alert_type: AlertType;
+  agent?: string;
+  threshold: number;
+  actual_value: number;
+  message: string;
+  timestamp: string;
+  rule_id: string;
 }
 
 // ─── Reports ─────────────────────────────────────────────

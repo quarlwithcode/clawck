@@ -2915,6 +2915,204 @@ channel
     clawck.close();
   });
 
+// ─── Alerts ──────────────────────────────────────────────
+
+const alerts = program
+  .command('alerts')
+  .description('Manage idle and overwork alert rules');
+
+alerts
+  .command('list')
+  .alias('ls')
+  .description('List all configured alert rules')
+  .option('-d, --dir <path>', 'Data directory')
+  .action(async (opts) => {
+    const config = loadConfig(resolveDataDir(opts));
+    const rules = config.alerts || [];
+
+    if (program.opts().json) {
+      console.log(JSON.stringify(rules));
+      return;
+    }
+
+    if (rules.length === 0) {
+      console.log('\n  No alert rules configured.\n');
+      console.log('  Add one with: clawck alerts add --type idle --threshold 240\n');
+      return;
+    }
+
+    console.log(`\n  Alert Rules (${rules.length}):`);
+    console.log(`  ${'─'.repeat(70)}`);
+    console.log(`  ${'ID'.padEnd(10)} ${'Type'.padEnd(10)} ${'Threshold'.padEnd(12)} ${'Status'.padEnd(10)} ${'Webhook'}`);
+    console.log(`  ${'─'.repeat(70)}`);
+
+    for (const rule of rules) {
+      const status = rule.enabled !== false ? 'enabled' : 'disabled';
+      const thresholdStr = `${rule.threshold_minutes} min`;
+      const webhookStr = rule.webhook_url ? rule.webhook_url.slice(0, 30) : '-';
+      console.log(`  ${rule.id.slice(0, 8).padEnd(10)} ${rule.type.padEnd(10)} ${thresholdStr.padEnd(12)} ${status.padEnd(10)} ${webhookStr}`);
+    }
+    console.log('');
+  });
+
+alerts
+  .command('add')
+  .description('Add a new alert rule')
+  .requiredOption('--type <type>', 'Alert type (idle or overwork)')
+  .requiredOption('--threshold <minutes>', 'Threshold in minutes', parseInt)
+  .option('-d, --dir <path>', 'Data directory')
+  .option('--webhook <url>', 'Webhook URL to call when triggered')
+  .option('--business-start <hour>', 'Business hours start (0-23, default 9)', parseInt)
+  .option('--business-end <hour>', 'Business hours end (0-23, default 17)', parseInt)
+  .action(async (opts) => {
+    const { createAlertRule } = await import('../core/alerts');
+    const dataDir = path.resolve(resolveDataDir(opts));
+    const configPath = path.join(dataDir, 'config.json');
+
+    if (opts.type !== 'idle' && opts.type !== 'overwork') {
+      console.error('  Invalid type. Must be "idle" or "overwork".');
+      process.exit(1);
+    }
+
+    if (opts.threshold <= 0) {
+      console.error('  Threshold must be a positive number.');
+      process.exit(1);
+    }
+
+    const rule = createAlertRule(opts.type, opts.threshold, {
+      webhook_url: opts.webhook,
+      business_hours_start: opts.businessStart,
+      business_hours_end: opts.businessEnd,
+    });
+
+    // Load existing config and add rule
+    let fileConfig: any = {};
+    if (fs.existsSync(configPath)) {
+      try { fileConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8')); } catch {}
+    }
+    if (!fileConfig.alerts) fileConfig.alerts = [];
+    fileConfig.alerts.push(rule);
+    fs.writeFileSync(configPath, JSON.stringify(fileConfig, null, 2));
+
+    if (program.opts().json) {
+      console.log(JSON.stringify(rule));
+    } else {
+      console.log(`\n  Alert rule created!`);
+      console.log(`  ├─ ID:        ${rule.id.slice(0, 8)}`);
+      console.log(`  ├─ Type:      ${rule.type}`);
+      console.log(`  ├─ Threshold: ${rule.threshold_minutes} minutes`);
+      if (rule.webhook_url) console.log(`  ├─ Webhook:   ${rule.webhook_url}`);
+      if (rule.type === 'idle') {
+        console.log(`  └─ Business:  ${rule.business_hours_start ?? 9}:00 - ${rule.business_hours_end ?? 17}:00`);
+      } else {
+        console.log(`  └─ Status:    enabled`);
+      }
+      console.log('');
+    }
+  });
+
+alerts
+  .command('remove <id>')
+  .description('Remove an alert rule')
+  .option('-d, --dir <path>', 'Data directory')
+  .action(async (id, opts) => {
+    const dataDir = path.resolve(resolveDataDir(opts));
+    const configPath = path.join(dataDir, 'config.json');
+
+    let fileConfig: any = {};
+    if (fs.existsSync(configPath)) {
+      try { fileConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8')); } catch {}
+    }
+
+    if (!fileConfig.alerts || fileConfig.alerts.length === 0) {
+      console.error('  No alert rules configured.');
+      process.exit(1);
+    }
+
+    const index = fileConfig.alerts.findIndex((r: any) => r.id === id || r.id.startsWith(id));
+    if (index === -1) {
+      console.error(`  Alert rule not found: ${id}`);
+      process.exit(1);
+    }
+
+    const removed = fileConfig.alerts.splice(index, 1)[0];
+    fs.writeFileSync(configPath, JSON.stringify(fileConfig, null, 2));
+
+    if (program.opts().json) {
+      console.log(JSON.stringify({ ok: true, deleted: removed }));
+    } else {
+      console.log(`  Removed alert rule: ${removed.id.slice(0, 8)} (${removed.type}, ${removed.threshold_minutes} min)`);
+    }
+  });
+
+alerts
+  .command('check')
+  .description('Manually check all alert rules and fire any triggered alerts')
+  .option('-d, --dir <path>', 'Data directory')
+  .option('--fire', 'Actually fire webhooks (default: dry run)')
+  .action(async (opts) => {
+    const { checkAllAlerts, fireAlertWebhook } = await import('../core/alerts');
+    const config = loadConfig(resolveDataDir(opts));
+    const clawck = await new Clawck(config).ready();
+    const rules = config.alerts || [];
+
+    if (rules.length === 0) {
+      console.log('  No alert rules configured.');
+      clawck.close();
+      return;
+    }
+
+    const triggered = checkAllAlerts(rules, clawck.database);
+
+    if (program.opts().json) {
+      console.log(JSON.stringify({
+        rules_checked: rules.length,
+        alerts_triggered: triggered.length,
+        alerts: triggered,
+      }));
+      clawck.close();
+      return;
+    }
+
+    console.log(`\n  ⏱️🦀 Alert Check`);
+    console.log(`  ${'─'.repeat(50)}`);
+    console.log(`  Rules checked: ${rules.length}`);
+    console.log(`  Alerts triggered: ${triggered.length}`);
+
+    if (triggered.length === 0) {
+      console.log(`\n  ✓ All clear — no alerts triggered.\n`);
+      clawck.close();
+      return;
+    }
+
+    console.log(`\n  Triggered Alerts:`);
+    for (const alert of triggered) {
+      console.log(`  • [${alert.alert_type.toUpperCase()}] ${alert.message}`);
+      if (alert.agent) console.log(`    Agent: ${alert.agent}`);
+    }
+
+    // Fire webhooks if --fire flag is set
+    if (opts.fire) {
+      console.log(`\n  Firing webhooks...`);
+      for (const alert of triggered) {
+        const rule = rules.find(r => r.id === alert.rule_id);
+        if (rule?.webhook_url) {
+          const result = await fireAlertWebhook(alert, rule.webhook_url);
+          if (result.ok) {
+            console.log(`  ✓ Sent to ${rule.webhook_url}`);
+          } else {
+            console.log(`  ✗ Failed: ${result.error}`);
+          }
+        }
+      }
+    } else {
+      console.log(`\n  (Dry run — use --fire to send webhooks)`);
+    }
+
+    console.log('');
+    clawck.close();
+  });
+
 function loadConfig(dir: string): ClawckConfig {
   const dataDir = path.resolve(dir);
   const defaultConfigPath = path.join(dataDir, 'config.json');

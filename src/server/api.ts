@@ -575,6 +575,45 @@ export async function createServer(config: Partial<ClawckConfig> = {}): Promise<
     res.json({ ok: true });
   });
 
+  // ─── Alerts ──────────────────────────────────────────
+
+  app.get('/api/alerts', (_req, res) => {
+    const rules = fullConfig.alerts || [];
+    res.json(rules);
+  });
+
+  app.post('/api/alerts/check', async (_req, res) => {
+    const { checkAllAlerts, fireAlertWebhook } = await import('../core/alerts');
+    const rules = fullConfig.alerts || [];
+
+    if (rules.length === 0) {
+      return res.json({
+        rules_checked: 0,
+        alerts_triggered: 0,
+        alerts: [],
+      });
+    }
+
+    const triggered = checkAllAlerts(rules, clawck.database);
+
+    // Fire webhooks for triggered alerts
+    const results: { alert: any; webhook_result?: { ok: boolean; error?: string } }[] = [];
+    for (const alert of triggered) {
+      const rule = rules.find(r => r.id === alert.rule_id);
+      const entry: any = { alert };
+      if (rule?.webhook_url) {
+        entry.webhook_result = await fireAlertWebhook(alert, rule.webhook_url);
+      }
+      results.push(entry);
+    }
+
+    res.json({
+      rules_checked: rules.length,
+      alerts_triggered: triggered.length,
+      alerts: results,
+    });
+  });
+
   // ─── Sync Status ──────────────────────────────────────
 
   // Start idle monitor if webhooks configured
