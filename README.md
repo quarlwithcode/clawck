@@ -1,10 +1,21 @@
-# Clawck v0.5
+# Clawck v0.6
 
 **System of record for AI agent work.**
 
 Clawck tracks what AI agents do, how long it takes, and what it costs — then calculates the human-equivalent value. One source of truth for agent timesheets, billing, and ROI.
 
 Every service business runs on timesheets. AI agent businesses will too.
+
+## What's New in 0.6
+
+- **Productivity Scoring** — `clawck score` for daily utilization and trends
+- **Category Trends** — `clawck trends` for weekly work distribution analysis
+- **Backup/Restore** — `clawck backup` and `clawck restore` for data portability
+- **Config Profiles** — `clawck profile` for managing multiple client/project configs
+- **Daily/Weekly Digests** — `clawck digest` for quick summary reports
+- **Social Share Cards** — `clawck share` generates shareable HTML cards
+
+See [CHANGELOG.md](CHANGELOG.md) for full details.
 
 ## Quick Start
 

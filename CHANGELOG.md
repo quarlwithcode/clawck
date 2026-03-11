@@ -5,6 +5,50 @@ All notable changes to Clawck are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Clawck uses [Semantic Versioning](https://semver.org/).
 
+## [0.6.0] - 2026-03-11
+
+### Added
+- **Productivity Scoring** — `clawck score` command and `GET /api/score` endpoint
+  - Daily utilization rate (agent hours vs available hours)
+  - Trend analysis (up/down/stable)
+  - Busiest category identification
+- **Category Trends** — `clawck trends` command and `GET /api/trends` endpoint
+  - Weekly category distribution with week-over-week deltas
+  - Biggest shift detection
+- **Backup/Restore** — `clawck backup` and `clawck restore` commands
+  - Exports database, config, and entries.jsonl to .tar.gz
+  - Restore to existing or new directory with --force option
+- **Config Profiles** — `clawck profile list|create|use|show|delete` commands
+  - Store multiple configurations for different clients/projects
+  - Profiles stored in .clawck/profiles/*.json
+  - Active profile overrides default config
+- **Daily/Weekly Digests** — `clawck digest` command and `GET /api/digest` endpoint
+  - Summary stats, highlights, top tasks, and period comparison
+  - Weekly digests include per-day breakdown
+- **Social Share Cards** — `clawck share` command and `GET /api/share` endpoint
+  - Generate 1200x630 HTML cards for social media
+  - Three themes: light, dark, gradient
+  - Open Graph and Twitter Card meta tags included
+- **OpenClaw Integration** — `clawck setup openclaw` outputs hook config
+  - Signal file support (.agent-done with epoch timestamps)
+  - handler.ts and hook.json templates
+- **Hook Reliability**
+  - OpenClaw platform adapter with signal file parsing
+  - agent_runtime_ms validation (never null after completion)
+  - Improved runtime estimation from hook context
+
+### Changed
+- loadConfig() now merges active profile settings automatically
+- Setup command expanded with gemini, cursor targets
+
+### Tests
+- 326 passing tests (up from 298)
+- New test files: score, trends, backup, profiles, digest, share-card
+
+### Internal
+- Schema version: 5 (unchanged)
+- Spec version: 0.2.0 (unchanged)
+
 ## [0.5.3] - 2026-03-08
 
 ### Fixed
