@@ -5,7 +5,7 @@
 
 export type HookEvent = 'start' | 'stop';
 
-export type Platform = 'claude' | 'gemini' | 'cursor' | 'cline' | 'windsurf' | 'codex' | 'unknown';
+export type Platform = 'claude' | 'gemini' | 'cursor' | 'cline' | 'windsurf' | 'codex' | 'openclaw' | 'unknown';
 
 export interface HookContext {
   platform: Platform;
@@ -19,6 +19,12 @@ export interface HookContext {
   tokens_out?: number;
   cost_usd?: number;
   tool_calls?: number;
+  /** Agent runtime in milliseconds (from signal file or explicit field) */
+  agent_runtime_ms?: number;
+  /** Start timestamp in epoch ms (from signal file) */
+  start_epoch_ms?: number;
+  /** End timestamp in epoch ms (from signal file) */
+  end_epoch_ms?: number;
   raw: unknown;
 }
 

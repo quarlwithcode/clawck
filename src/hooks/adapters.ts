@@ -14,6 +14,8 @@ export function detectPlatform(json: Record<string, unknown>): Platform {
   if (json.clineVersion || json.taskId) return 'cline';
   if (json.agent_action_name) return 'windsurf';
   if (json.turn_id || json.thread_id) return 'codex';
+  // OpenClaw detection: look for openclaw-specific fields or signal file data
+  if (json.openclaw_session_id || json.signal_file || json.start_epoch_ms || json.end_epoch_ms) return 'openclaw';
   return 'unknown';
 }
 
@@ -133,6 +135,53 @@ function normalizeCodex(json: Record<string, unknown>): HookContext {
   };
 }
 
+// ─── OpenClaw Adapter ──────────────────────────────────────
+
+function normalizeOpenclaw(json: Record<string, unknown>): HookContext {
+  // Parse signal file timing if present (epoch ms format)
+  let startEpochMs: number | undefined;
+  let endEpochMs: number | undefined;
+  let agentRuntimeMs: number | undefined;
+
+  // Support direct epoch ms fields
+  startEpochMs = num(json.start_epoch_ms);
+  endEpochMs = num(json.end_epoch_ms);
+
+  // Parse .agent-done signal file content if provided
+  // Signal file format: { "start_ms": 1234567890123, "end_ms": 1234567890456 }
+  if (json.signal_file && typeof json.signal_file === 'object') {
+    const sig = json.signal_file as Record<string, unknown>;
+    startEpochMs = startEpochMs ?? num(sig.start_ms);
+    endEpochMs = endEpochMs ?? num(sig.end_ms);
+  }
+
+  // Calculate agent_runtime_ms from epoch timestamps
+  if (startEpochMs && endEpochMs && endEpochMs > startEpochMs) {
+    agentRuntimeMs = endEpochMs - startEpochMs;
+  }
+
+  // Also accept explicit agent_runtime_ms
+  agentRuntimeMs = agentRuntimeMs ?? num(json.agent_runtime_ms);
+
+  return {
+    platform: 'openclaw',
+    session_id: str(json.openclaw_session_id) || str(json.session_id) || 'openclaw-' + Date.now(),
+    task: str(json.task) || str(json.prompt) || str(json.message) || 'openclaw-task',
+    project: str(json.project) || str(json.cwd),
+    agent: str(json.agent) || 'openclaw-agent',
+    model: str(json.model),
+    cwd: str(json.cwd),
+    tokens_in: num(json.tokens_in) ?? num(json.input_tokens),
+    tokens_out: num(json.tokens_out) ?? num(json.output_tokens),
+    cost_usd: num(json.cost_usd) ?? num(json.total_cost_usd),
+    tool_calls: num(json.tool_calls) ?? num(json.num_tool_calls),
+    agent_runtime_ms: agentRuntimeMs,
+    start_epoch_ms: startEpochMs,
+    end_epoch_ms: endEpochMs,
+    raw: json,
+  };
+}
+
 // ─── Unknown / Fallback Adapter ────────────────────────────
 
 function normalizeUnknown(json: Record<string, unknown>): HookContext {
@@ -161,6 +210,7 @@ const adapters: Record<Platform, (json: Record<string, unknown>) => HookContext>
   cline: normalizeCline,
   windsurf: normalizeWindsurf,
   codex: normalizeCodex,
+  openclaw: normalizeOpenclaw,
   unknown: normalizeUnknown,
 };
 

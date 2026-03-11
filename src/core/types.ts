@@ -342,6 +342,8 @@ export interface ClawckStopInput {
   tokens_out?: number;
   cost_usd?: number;
   tool_calls?: number;
+  /** Override agent runtime (from signal file or explicit timing) */
+  agent_runtime_ms?: number;
 }
 
 export interface ClawckLogInput {

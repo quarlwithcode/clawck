@@ -125,34 +125,45 @@ export class Clawck {
     if (existing) {
       updates.wall_clock_ms = calculateWallClock(existing.start, endTime);
 
-      const tokensOut = input.tokens_out ?? existing.tokens_out ?? 0;
-      const toolCalls = input.tool_calls ?? existing.tool_calls ?? 0;
-      const model = existing.model || 'unknown';
-      if (tokensOut > 0 || toolCalls > 0) {
-        const runtimeConfig = this.getRuntimeConfig();
-        updates.agent_runtime_ms = estimateAgentRuntime(
-          { tokens_out: tokensOut, model, tool_calls: toolCalls },
-          runtimeConfig
-        );
+      // Priority 1: Use explicit agent_runtime_ms from input (e.g., from signal file)
+      if (input.agent_runtime_ms != null && input.agent_runtime_ms > 0) {
+        updates.agent_runtime_ms = input.agent_runtime_ms;
       } else {
-        // No token data available (e.g. hook-based tracking) — wall clock is the best proxy
-        updates.agent_runtime_ms = updates.wall_clock_ms;
-
-        // Reverse-estimate tokens from wall clock time
-        if (updates.wall_clock_ms && updates.wall_clock_ms > 0) {
+        // Priority 2: Estimate from tokens/tool calls
+        const tokensOut = input.tokens_out ?? existing.tokens_out ?? 0;
+        const toolCalls = input.tool_calls ?? existing.tool_calls ?? 0;
+        const model = existing.model || 'unknown';
+        if (tokensOut > 0 || toolCalls > 0) {
           const runtimeConfig = this.getRuntimeConfig();
-          const speed = findModelSpeed(model, runtimeConfig);
-          // 0.5 factor: not all wall clock time is active generation
-          const estimatedOut = Math.round((updates.wall_clock_ms / 1000) * speed * 0.5);
-          if (estimatedOut > 0) {
-            updates.tokens_out = estimatedOut;
-            updates.tokens_in = Math.round(estimatedOut * 2); // rough input:output ratio
-            const estimated = estimateCost(model, updates.tokens_in, estimatedOut, true);
-            if (estimated != null) {
-              updates.cost_usd = Math.round(estimated * 10000) / 10000;
+          updates.agent_runtime_ms = estimateAgentRuntime(
+            { tokens_out: tokensOut, model, tool_calls: toolCalls },
+            runtimeConfig
+          );
+        } else {
+          // Priority 3: Fall back to wall clock time
+          updates.agent_runtime_ms = updates.wall_clock_ms;
+
+          // Reverse-estimate tokens from wall clock time
+          if (updates.wall_clock_ms && updates.wall_clock_ms > 0) {
+            const runtimeConfig = this.getRuntimeConfig();
+            const speed = findModelSpeed(model, runtimeConfig);
+            // 0.5 factor: not all wall clock time is active generation
+            const estimatedOut = Math.round((updates.wall_clock_ms / 1000) * speed * 0.5);
+            if (estimatedOut > 0) {
+              updates.tokens_out = estimatedOut;
+              updates.tokens_in = Math.round(estimatedOut * 2); // rough input:output ratio
+              const estimated = estimateCost(model, updates.tokens_in, estimatedOut, true);
+              if (estimated != null) {
+                updates.cost_usd = Math.round(estimated * 10000) / 10000;
+              }
             }
           }
         }
+      }
+
+      // Final validation: ensure agent_runtime_ms is never null if we have timestamps
+      if (updates.agent_runtime_ms == null && updates.wall_clock_ms != null) {
+        updates.agent_runtime_ms = updates.wall_clock_ms;
       }
     }
 

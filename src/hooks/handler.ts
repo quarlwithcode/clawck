@@ -76,7 +76,7 @@ export async function handleHookStop(config: ClawckConfig, context: HookContext)
     }
 
     const rawKeys = context.raw && typeof context.raw === 'object' ? Object.keys(context.raw as Record<string, unknown>).join(',') : '(none)';
-    logger.debug('hooks', `Stop context: tokens_in=${context.tokens_in} tokens_out=${context.tokens_out} cost_usd=${context.cost_usd} tool_calls=${context.tool_calls} | raw_keys=[${rawKeys}]`);
+    logger.debug('hooks', `Stop context: tokens_in=${context.tokens_in} tokens_out=${context.tokens_out} cost_usd=${context.cost_usd} tool_calls=${context.tool_calls} agent_runtime_ms=${context.agent_runtime_ms} | raw_keys=[${rawKeys}]`);
 
     const clawck = await new Clawck(config).ready();
 
@@ -88,6 +88,7 @@ export async function handleHookStop(config: ClawckConfig, context: HookContext)
         tokens_out: context.tokens_out,
         cost_usd: context.cost_usd,
         tool_calls: context.tool_calls,
+        agent_runtime_ms: context.agent_runtime_ms,
       });
 
       clearSession(config.data_dir, context.session_id);
