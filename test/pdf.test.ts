@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { generateTimesheetPDF } from '../src/reports/pdf';
+import { generateTimesheetPDF, generateInvoicePDF } from '../src/reports/pdf';
 import { TimesheetSummary } from '../src/core/types';
 
 describe('PDF report generation', () => {
@@ -165,5 +165,110 @@ describe('PDF report generation', () => {
     expect(fs.existsSync(outputPath)).toBe(true);
     const stat = fs.statSync(outputPath);
     expect(stat.size).toBeGreaterThan(0);
+  });
+});
+
+// ─── Invoice PDF Generation ────────────────────────────────
+
+describe('Invoice PDF generation', () => {
+  const tmpFiles: string[] = [];
+
+  afterEach(() => {
+    for (const f of tmpFiles) {
+      try { fs.unlinkSync(f); } catch {}
+    }
+    tmpFiles.length = 0;
+  });
+
+  function tmpPath(): string {
+    const p = path.join(os.tmpdir(), `clawck-invoice-${Date.now()}-${Math.random().toString(36).slice(2)}.pdf`);
+    tmpFiles.push(p);
+    return p;
+  }
+
+  const mockSummaryWithEntries: TimesheetSummary = {
+    period_start: '2026-03-01T00:00:00.000Z',
+    period_end: '2026-03-08T00:00:00.000Z',
+    total_entries: 3,
+    total_agent_hours: 10.5,
+    total_human_equiv_hours: 73.5,
+    total_cost_usd: 1.05,
+    total_savings_usd: 3675,
+    total_tokens: 120000,
+    total_tokens_in: 80000,
+    total_tokens_out: 40000,
+    total_time_saved_hours: 63,
+    by_client: [
+      { client: 'acme', agent_hours: 10.5, human_equiv_hours: 73.5, cost_usd: 1.05, savings_usd: 3675, entries: 3 },
+    ],
+    by_agent: [
+      { agent: 'bot-1', model: 'claude-sonnet-4', agent_hours: 10.5, human_equiv_hours: 73.5, cost_usd: 1.05, entries: 3, success_rate: 100 },
+    ],
+    by_project: [
+      { project: 'website', client: 'acme', agent_hours: 6, human_equiv_hours: 42, cost_usd: 0.60, entries: 2 },
+      { project: 'api', client: 'acme', agent_hours: 4.5, human_equiv_hours: 31.5, cost_usd: 0.45, entries: 1 },
+    ],
+    by_category: [
+      { category: 'code', agent_hours: 10.5, human_equiv_hours: 63, cost_usd: 1.05, savings_usd: 4725, entries: 3 },
+    ],
+    total_agent_merged_runtime_hours: 9,
+    entries: [
+      { date: '2026-03-07', start_time: '2026-03-07T10:00:00.000Z', end_time: '2026-03-07T13:00:00.000Z', agent: 'bot-1', client: 'acme', project: 'website', task: 'Implement user authentication feature', category: 'code' as const, duration_minutes: 180, tokens_in: 30000, tokens_out: 15000, tokens_total: 45000, cost_usd: 0.35, human_equiv_hours: 18, human_equiv_cost_saved: 1350, time_saved_hours: 15, status: 'completed' as const, approved: true },
+      { date: '2026-03-06', start_time: '2026-03-06T14:00:00.000Z', end_time: '2026-03-06T17:00:00.000Z', agent: 'bot-1', client: 'acme', project: 'website', task: 'Build dashboard components', category: 'code' as const, duration_minutes: 180, tokens_in: 25000, tokens_out: 12000, tokens_total: 37000, cost_usd: 0.30, human_equiv_hours: 18, human_equiv_cost_saved: 1350, time_saved_hours: 15, status: 'completed' as const, approved: true },
+      { date: '2026-03-05', start_time: '2026-03-05T09:00:00.000Z', end_time: '2026-03-05T13:30:00.000Z', agent: 'bot-1', client: 'acme', project: 'api', task: 'Refactor REST API endpoints', category: 'code' as const, duration_minutes: 270, tokens_in: 25000, tokens_out: 13000, tokens_total: 38000, cost_usd: 0.40, human_equiv_hours: 27, human_equiv_cost_saved: 2025, time_saved_hours: 22.5, status: 'completed' as const, approved: true },
+    ],
+  };
+
+  it('generates a valid invoice PDF without rate', async () => {
+    const outputPath = tmpPath();
+    await generateInvoicePDF(mockSummaryWithEntries, {
+      clientName: 'Acme Corp',
+      dateRange: '2026-03-01 to 2026-03-08',
+      outputPath,
+    });
+
+    expect(fs.existsSync(outputPath)).toBe(true);
+    const stat = fs.statSync(outputPath);
+    expect(stat.size).toBeGreaterThan(0);
+
+    // Check PDF magic bytes
+    const buf = Buffer.alloc(4);
+    const fd = fs.openSync(outputPath, 'r');
+    fs.readSync(fd, buf, 0, 4, 0);
+    fs.closeSync(fd);
+    expect(buf.toString('ascii')).toBe('%PDF');
+  });
+
+  it('generates invoice PDF with hourly rate', async () => {
+    const outputPath = tmpPath();
+    await generateInvoicePDF(mockSummaryWithEntries, {
+      clientName: 'Acme Corp',
+      dateRange: '2026-03-01 to 2026-03-08',
+      outputPath,
+      rate: 150,
+    });
+
+    expect(fs.existsSync(outputPath)).toBe(true);
+    expect(fs.statSync(outputPath).size).toBeGreaterThan(0);
+  });
+
+  it('generates invoice with custom footer and terms', async () => {
+    const outputPath = tmpPath();
+    await generateInvoicePDF(mockSummaryWithEntries, {
+      clientName: 'Acme Corp',
+      dateRange: '2026-03-01 to 2026-03-08',
+      outputPath,
+      rate: 100,
+      footer: 'Thank you for your business!',
+      terms: 'Net 30',
+      invoiceNumber: 'INV-2026-001',
+    });
+
+    expect(fs.existsSync(outputPath)).toBe(true);
+    const buf = Buffer.alloc(4);
+    const fd = fs.openSync(outputPath, 'r');
+    fs.readSync(fd, buf, 0, 4, 0);
+    fs.closeSync(fd);
+    expect(buf.toString('ascii')).toBe('%PDF');
   });
 });

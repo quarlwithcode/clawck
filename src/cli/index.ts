@@ -582,6 +582,87 @@ program
     clawck.close();
   });
 
+// ─── Invoice ──────────────────────────────────────────────
+
+program
+  .command('invoice <client>')
+  .description('Generate a professional PDF invoice/timesheet for a client')
+  .option('-d, --dir <path>', 'Data directory')
+  .option('--days <number>', 'Number of days to include', '30')
+  .option('--rate <number>', 'Hourly rate in USD (optional)', parseFloat)
+  .option('--logo <path>', 'Path to logo image')
+  .option('--output <path>', 'Output file path')
+  .option('--footer <text>', 'Custom footer text')
+  .option('--terms <text>', 'Payment terms (default: Due on receipt)')
+  .option('--invoice-number <text>', 'Custom invoice number')
+  .action(async (clientName, opts) => {
+    const { generateInvoicePDF } = await import('../reports/pdf');
+    const config = loadConfig(resolveDataDir(opts));
+    const clawck = await new Clawck(config).ready();
+
+    const days = parseInt(opts.days) || 30;
+    const now = new Date();
+    const to = now.toISOString();
+    const from = new Date(now.getTime() - days * 86400000).toISOString();
+
+    const ts = clawck.timesheet(from, to, { client: clientName });
+
+    if (ts.total_entries === 0) {
+      if (program.opts().json) {
+        console.log(JSON.stringify({ ok: false, error: `No entries found for client "${clientName}"` }));
+      } else {
+        console.error(`  No entries found for client "${clientName}" in the last ${days} days.`);
+      }
+      clawck.close();
+      process.exit(1);
+    }
+
+    const today = new Date().toISOString().split('T')[0];
+    const outputPath = opts.output || `invoice-${clientName.replace(/[^a-zA-Z0-9]/g, '-')}-${today}.pdf`;
+    const dateRange = `${from.split('T')[0]} to ${to.split('T')[0]}`;
+
+    await generateInvoicePDF(ts, {
+      clientName,
+      dateRange,
+      outputPath,
+      rate: opts.rate,
+      logo: opts.logo,
+      footer: opts.footer,
+      terms: opts.terms,
+      invoiceNumber: opts.invoiceNumber,
+    });
+
+    if (program.opts().json) {
+      const totalHours = ts.total_agent_hours;
+      const grandTotal = opts.rate ? totalHours * opts.rate : null;
+      console.log(JSON.stringify({
+        ok: true,
+        path: path.resolve(outputPath),
+        client: clientName,
+        entries: ts.total_entries,
+        total_hours: totalHours,
+        total_amount: grandTotal,
+        period: { from: from.split('T')[0], to: to.split('T')[0] },
+      }));
+    } else {
+      console.log(`\n  ⏱️🦀 Invoice Generated!`);
+      console.log(`  ├─ File:       ${path.resolve(outputPath)}`);
+      console.log(`  ├─ Client:     ${clientName}`);
+      console.log(`  ├─ Period:     ${dateRange}`);
+      console.log(`  ├─ Entries:    ${ts.total_entries}`);
+      console.log(`  ├─ Total Hrs:  ${ts.total_agent_hours.toFixed(2)}`);
+      if (opts.rate) {
+        const grandTotal = ts.total_agent_hours * opts.rate;
+        console.log(`  ├─ Rate:       $${opts.rate.toFixed(2)}/hr`);
+        console.log(`  └─ Total:      $${grandTotal.toFixed(2)}`);
+      } else {
+        console.log(`  └─ (No rate specified — showing hours only)`);
+      }
+      console.log('');
+    }
+    clawck.close();
+  });
+
 // ─── Report ───────────────────────────────────────────────
 
 const reportCmd = program
