@@ -155,6 +155,55 @@ program
     clawck.close();
   });
 
+// ─── Score ────────────────────────────────────────────────
+
+program
+  .command('score')
+  .description('Show productivity score and utilization rate')
+  .option('-d, --dir <path>', 'Data directory')
+  .option('--days <number>', 'Number of days to analyze', '7')
+  .option('--weekly', 'Show weekly breakdown')
+  .option('--available-hours <number>', 'Available hours per day (default: 8)', '8')
+  .action(async (opts) => {
+    const config = loadConfig(resolveDataDir(opts));
+    const clawck = await new Clawck(config).ready();
+
+    const days = parseInt(opts.days) || 7;
+    const availableHours = parseInt(opts.availableHours) || 8;
+    const score = clawck.score({ days, weekly: opts.weekly, available_hours_per_day: availableHours });
+
+    if (program.opts().json) {
+      console.log(JSON.stringify(score));
+      clawck.close();
+      return;
+    }
+
+    const trendArrow = score.trend === 'up' ? '↑' : score.trend === 'down' ? '↓' : '→';
+
+    console.log(`\n  ⏱️🦀 Productivity Score (${days} days)`);
+    console.log(`  ${'─'.repeat(50)}`);
+    console.log(`  📊 Overall utilization:  ${score.overall_utilization_percent}% ${trendArrow}`);
+    console.log(`  ⏱️  Total agent time:    ${score.total_agent_runtime_hours.toFixed(2)}h / ${score.total_available_hours}h available`);
+    console.log(`  📈 Daily average:        ${score.daily_average_hours.toFixed(2)}h`);
+    console.log(`  🏆 Busiest category:     ${score.busiest_category || 'n/a'}`);
+    console.log(`  🔢 Total entries:        ${score.total_entries}`);
+
+    if (opts.weekly || days >= 7) {
+      console.log(`\n  📅 Daily Breakdown:`);
+      console.log(`  ${'Date'.padEnd(12)} ${'Util'.padEnd(6)} ${'Hours'.padEnd(8)} ${'Entries'.padEnd(8)} ${'Top Cat'.padEnd(15)} Trend`);
+      console.log(`  ${'─'.repeat(55)}`);
+
+      for (const day of score.days) {
+        const dayTrend = day.trend === 'up' ? '↑' : day.trend === 'down' ? '↓' : '→';
+        const utilBar = '█'.repeat(Math.round(day.utilization_percent / 10));
+        console.log(`  ${day.date.padEnd(12)} ${(day.utilization_percent + '%').padEnd(6)} ${day.agent_runtime_hours.toFixed(2).padEnd(8)} ${String(day.entry_count).padEnd(8)} ${(day.top_category || '-').padEnd(15)} ${dayTrend} ${utilBar}`);
+      }
+    }
+
+    console.log('');
+    clawck.close();
+  });
+
 // ─── Report ───────────────────────────────────────────────
 
 const reportCmd = program

@@ -149,6 +149,16 @@ export async function createServer(config: Partial<ClawckConfig> = {}): Promise<
     res.json(clawck.running());
   });
 
+  // ─── Productivity Score ─────────────────────────────────
+
+  app.get('/api/score', (req, res) => {
+    const days = safeInt(req.query.days as string, 7);
+    const weekly = req.query.weekly === 'true';
+    const availableHours = safeInt(req.query.available_hours as string, 8);
+    const score = clawck.score({ days, weekly, available_hours_per_day: availableHours });
+    res.json(score);
+  });
+
   // ─── Timesheet ─────────────────────────────────────────
 
   app.get('/api/timesheet', (req, res) => {

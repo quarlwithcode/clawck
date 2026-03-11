@@ -397,3 +397,28 @@ export const TASK_CATEGORIES: TaskCategory[] = [
   'research', 'content', 'code', 'data_entry', 'design',
   'communication', 'analysis', 'testing', 'planning', 'other',
 ];
+
+// ─── Productivity Score ───────────────────────────────────
+
+export interface DayScore {
+  date: string;
+  agent_runtime_hours: number;
+  available_hours: number;
+  utilization_percent: number;
+  entry_count: number;
+  top_category: TaskCategory | null;
+  trend: 'up' | 'down' | 'stable';
+}
+
+export interface ProductivityScore {
+  period_start: string;
+  period_end: string;
+  days: DayScore[];
+  total_agent_runtime_hours: number;
+  total_available_hours: number;
+  overall_utilization_percent: number;
+  busiest_category: TaskCategory | null;
+  total_entries: number;
+  daily_average_hours: number;
+  trend: 'up' | 'down' | 'stable';
+}

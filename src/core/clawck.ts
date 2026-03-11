@@ -8,6 +8,7 @@ import {
   ClawckEntry, ClawckConfig, ClawckStartInput, ClawckStopInput, ClawckLogInput,
   TimesheetSummary, SPEC_VERSION, DEFAULT_CONFIG, TrackingPattern, TaskCategory,
   StoredReport, ReportMetadata, ReportPeriod, ReportStyle, ReportFormat,
+  ProductivityScore, DayScore,
 } from './types';
 import { estimateCost } from './pricing';
 import { ClawckDB } from './database';
@@ -356,6 +357,121 @@ export class Clawck {
 
   deleteReport(id: string): boolean {
     return this._db.deleteReport(id);
+  }
+
+  // ─── Productivity Score ───────────────────────────────
+
+  score(opts: { days?: number; weekly?: boolean; available_hours_per_day?: number } = {}): ProductivityScore {
+    const days = opts.days || (opts.weekly ? 7 : 7);
+    const availableHoursPerDay = opts.available_hours_per_day || 8;
+
+    const now = new Date();
+    const to = now.toISOString();
+    const from = new Date(now.getTime() - days * 86400000).toISOString();
+
+    const entries = this._db.query({ from, to, limit: 10000 });
+
+    // Group entries by date
+    const byDate = new Map<string, ClawckEntry[]>();
+    for (const e of entries) {
+      const date = e.start.split('T')[0];
+      if (!byDate.has(date)) byDate.set(date, []);
+      byDate.get(date)!.push(e);
+    }
+
+    // Generate day scores
+    const dayScores: DayScore[] = [];
+    let prevScore: number | null = null;
+
+    for (let i = 0; i < days; i++) {
+      const date = new Date(now.getTime() - (days - 1 - i) * 86400000).toISOString().split('T')[0];
+      const dayEntries = byDate.get(date) || [];
+
+      // Calculate agent runtime for the day
+      let agentRuntimeMs = 0;
+      const categoryCounts = new Map<TaskCategory, number>();
+
+      for (const e of dayEntries) {
+        const runtime = e.agent_runtime_ms ?? e.wall_clock_ms ?? 0;
+        agentRuntimeMs += runtime;
+        const cat = e.category;
+        categoryCounts.set(cat, (categoryCounts.get(cat) || 0) + 1);
+      }
+
+      const agentRuntimeHours = agentRuntimeMs / 3600000;
+      const utilizationPercent = Math.min(100, Math.round((agentRuntimeHours / availableHoursPerDay) * 100));
+
+      // Find top category
+      let topCategory: TaskCategory | null = null;
+      let maxCount = 0;
+      for (const [cat, count] of categoryCounts) {
+        if (count > maxCount) {
+          maxCount = count;
+          topCategory = cat;
+        }
+      }
+
+      // Determine trend
+      let trend: 'up' | 'down' | 'stable' = 'stable';
+      if (prevScore !== null) {
+        if (utilizationPercent > prevScore + 5) trend = 'up';
+        else if (utilizationPercent < prevScore - 5) trend = 'down';
+      }
+      prevScore = utilizationPercent;
+
+      dayScores.push({
+        date,
+        agent_runtime_hours: Math.round(agentRuntimeHours * 100) / 100,
+        available_hours: availableHoursPerDay,
+        utilization_percent: utilizationPercent,
+        entry_count: dayEntries.length,
+        top_category: topCategory,
+        trend,
+      });
+    }
+
+    // Calculate totals
+    const totalAgentRuntimeHours = dayScores.reduce((s, d) => s + d.agent_runtime_hours, 0);
+    const totalAvailableHours = days * availableHoursPerDay;
+    const overallUtilization = Math.min(100, Math.round((totalAgentRuntimeHours / totalAvailableHours) * 100));
+    const totalEntries = entries.length;
+    const dailyAverageHours = Math.round((totalAgentRuntimeHours / days) * 100) / 100;
+
+    // Find busiest category across all entries
+    const globalCategoryCounts = new Map<TaskCategory, number>();
+    for (const e of entries) {
+      const cat = e.category;
+      globalCategoryCounts.set(cat, (globalCategoryCounts.get(cat) || 0) + 1);
+    }
+    let busiestCategory: TaskCategory | null = null;
+    let maxGlobal = 0;
+    for (const [cat, count] of globalCategoryCounts) {
+      if (count > maxGlobal) {
+        maxGlobal = count;
+        busiestCategory = cat;
+      }
+    }
+
+    // Overall trend: compare first half to second half
+    const halfPoint = Math.floor(dayScores.length / 2);
+    const firstHalfAvg = dayScores.slice(0, halfPoint).reduce((s, d) => s + d.utilization_percent, 0) / Math.max(1, halfPoint);
+    const secondHalfAvg = dayScores.slice(halfPoint).reduce((s, d) => s + d.utilization_percent, 0) / Math.max(1, dayScores.length - halfPoint);
+    let overallTrend: 'up' | 'down' | 'stable' = 'stable';
+    if (secondHalfAvg > firstHalfAvg + 5) overallTrend = 'up';
+    else if (secondHalfAvg < firstHalfAvg - 5) overallTrend = 'down';
+
+    return {
+      period_start: from,
+      period_end: to,
+      days: dayScores,
+      total_agent_runtime_hours: Math.round(totalAgentRuntimeHours * 100) / 100,
+      total_available_hours: totalAvailableHours,
+      overall_utilization_percent: overallUtilization,
+      busiest_category: busiestCategory,
+      total_entries: totalEntries,
+      daily_average_hours: dailyAverageHours,
+      trend: overallTrend,
+    };
   }
 
   // ─── Runtime Config ──────────────────────────────────
