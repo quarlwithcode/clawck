@@ -164,6 +164,7 @@ program
   .option('--days <number>', 'Number of days to analyze', '7')
   .option('--weekly', 'Show weekly breakdown')
   .option('--available-hours <number>', 'Available hours per day (default: 8)', '8')
+  .option('--format <type>', 'Output format (terminal, discord, slack, telegram, markdown)', 'terminal')
   .action(async (opts) => {
     const config = loadConfig(resolveDataDir(opts));
     const clawck = await new Clawck(config).ready();
@@ -174,6 +175,15 @@ program
 
     if (program.opts().json) {
       console.log(JSON.stringify(score));
+      clawck.close();
+      return;
+    }
+
+    // Check for platform formatters
+    if (opts.format && opts.format !== 'terminal') {
+      const { formatScore } = await import('../reports/formatters/index');
+      const output = formatScore(score, opts.format, {});
+      console.log(output);
       clawck.close();
       return;
     }
@@ -261,6 +271,8 @@ program
   .option('-d, --dir <path>', 'Data directory')
   .option('--period <type>', 'Digest period (day, week)', 'day')
   .option('--date <date>', 'Specific date (YYYY-MM-DD)')
+  .option('--format <type>', 'Output format (terminal, discord, slack, telegram, markdown)', 'terminal')
+  .option('--redact', 'Redact task descriptions for privacy')
   .action(async (opts) => {
     const config = loadConfig(resolveDataDir(opts));
     const clawck = await new Clawck(config).ready();
@@ -270,6 +282,15 @@ program
 
     if (program.opts().json) {
       console.log(JSON.stringify(digest));
+      clawck.close();
+      return;
+    }
+
+    // Check for platform formatters
+    if (opts.format && opts.format !== 'terminal') {
+      const { formatDigest } = await import('../reports/formatters/index');
+      const output = formatDigest(digest, opts.format, { redact: opts.redact });
+      console.log(output);
       clawck.close();
       return;
     }
@@ -401,6 +422,134 @@ program
     clawck.close();
   });
 
+// ─── Timesheet ────────────────────────────────────────────
+
+program
+  .command('timesheet <client>')
+  .description('Show invoice-ready timesheet for a specific client')
+  .option('-d, --dir <path>', 'Data directory')
+  .option('--days <number>', 'Number of days to include', '30')
+  .option('--weekly', 'Show last 7 days')
+  .option('--monthly', 'Show last 30 days')
+  .option('--from <date>', 'Start date (YYYY-MM-DD or ISO)')
+  .option('--to <date>', 'End date (YYYY-MM-DD or ISO)')
+  .option('--redact', 'Redact task descriptions for privacy')
+  .option('--summary-only', 'Show only project/client totals')
+  .option('--format <type>', 'Output format (terminal, discord, slack, telegram, markdown)', 'terminal')
+  .action(async (clientName, opts) => {
+    const config = loadConfig(resolveDataDir(opts));
+    const clawck = await new Clawck(config).ready();
+
+    // Resolve time period
+    let days = parseInt(opts.days) || 30;
+    if (opts.weekly) days = 7;
+    if (opts.monthly) days = 30;
+
+    const now = new Date();
+    const to = opts.to || now.toISOString();
+    const from = opts.from || new Date(now.getTime() - days * 86400000).toISOString();
+
+    const ts = clawck.timesheet(from, to, { client: clientName });
+
+    if (program.opts().json) {
+      // Apply redaction if needed
+      if (opts.redact) {
+        for (const entry of ts.entries) {
+          entry.task = `${entry.category} task`;
+        }
+      }
+      if (opts.summaryOnly) {
+        console.log(JSON.stringify({
+          period_start: ts.period_start,
+          period_end: ts.period_end,
+          total_entries: ts.total_entries,
+          total_agent_hours: ts.total_agent_hours,
+          total_human_equiv_hours: ts.total_human_equiv_hours,
+          total_cost_usd: ts.total_cost_usd,
+          total_savings_usd: ts.total_savings_usd,
+          by_project: ts.by_project,
+          by_category: ts.by_category,
+        }));
+      } else {
+        console.log(JSON.stringify(ts));
+      }
+      clawck.close();
+      return;
+    }
+
+    // Check for platform formatters
+    if (opts.format && opts.format !== 'terminal') {
+      const { formatTimesheet } = await import('../reports/formatters/index');
+      const output = formatTimesheet(ts, opts.format, { redact: opts.redact, summaryOnly: opts.summaryOnly, clientName });
+      console.log(output);
+      clawck.close();
+      return;
+    }
+
+    // Terminal output - invoice-ready format
+    const periodLabel = `${from.split('T')[0]} to ${to.split('T')[0]}`;
+    console.log(`\n  ⏱️🦀 Timesheet — ${clientName}`);
+    console.log(`  📅 ${periodLabel}`);
+    console.log(`  ${'─'.repeat(70)}`);
+
+    if (ts.total_entries === 0) {
+      console.log(`  No entries found for client "${clientName}" in this period.`);
+      console.log('');
+      clawck.close();
+      return;
+    }
+
+    if (opts.summaryOnly) {
+      // Summary only mode - just totals by project
+      console.log(`\n  📊 Summary by Project:`);
+      console.log(`  ${'Project'.padEnd(25)} ${'Hours'.padEnd(10)} ${'Human Equiv'.padEnd(14)} ${'Cost'.padEnd(12)} Entries`);
+      console.log(`  ${'─'.repeat(70)}`);
+      for (const p of ts.by_project) {
+        console.log(`  ${p.project.slice(0, 24).padEnd(25)} ${p.agent_hours.toFixed(2).padEnd(10)} ${p.human_equiv_hours.toFixed(2).padEnd(14)} $${p.cost_usd.toFixed(2).padEnd(11)} ${p.entries}`);
+      }
+      console.log(`  ${'─'.repeat(70)}`);
+      console.log(`  ${'TOTAL'.padEnd(25)} ${ts.total_agent_hours.toFixed(2).padEnd(10)} ${ts.total_human_equiv_hours.toFixed(2).padEnd(14)} $${ts.total_cost_usd.toFixed(2).padEnd(11)} ${ts.total_entries}`);
+      console.log('');
+    } else {
+      // Detailed entries grouped by date
+      const byDate = new Map<string, typeof ts.entries>();
+      for (const entry of ts.entries) {
+        const date = entry.date;
+        if (!byDate.has(date)) byDate.set(date, []);
+        byDate.get(date)!.push(entry);
+      }
+
+      // Sort dates descending (newest first)
+      const sortedDates = [...byDate.keys()].sort((a, b) => b.localeCompare(a));
+
+      for (const date of sortedDates) {
+        const entries = byDate.get(date)!;
+        const dayTotal = entries.reduce((s, e) => s + e.duration_minutes, 0);
+        console.log(`\n  📅 ${date} (${formatDuration(dayTotal)})`);
+        console.log(`  ${'Task'.padEnd(40)} ${'Duration'.padEnd(10)} ${'Project'.padEnd(15)} Category`);
+        console.log(`  ${'─'.repeat(70)}`);
+
+        for (const e of entries) {
+          const taskDisplay = opts.redact ? `${e.category} task` : (e.task.length > 38 ? e.task.slice(0, 35) + '...' : e.task);
+          console.log(`  ${taskDisplay.padEnd(40)} ${formatDuration(e.duration_minutes).padEnd(10)} ${e.project.slice(0, 14).padEnd(15)} ${e.category}`);
+        }
+      }
+
+      // Project subtotals
+      console.log(`\n  📊 By Project:`);
+      for (const p of ts.by_project) {
+        console.log(`  • ${p.project}: ${p.agent_hours.toFixed(2)}h (${p.entries} entries)`);
+      }
+
+      // Grand total
+      console.log(`\n  ${'─'.repeat(70)}`);
+      console.log(`  💰 Total: ${ts.total_agent_hours.toFixed(2)} hours | Human equiv: ${ts.total_human_equiv_hours.toFixed(2)}h | Cost: $${ts.total_cost_usd.toFixed(2)} | Savings: $${ts.total_savings_usd.toFixed(0)}`);
+      console.log('');
+    }
+
+    clawck.close();
+  });
+
 // ─── Report ───────────────────────────────────────────────
 
 const reportCmd = program
@@ -415,9 +564,11 @@ const reportCmd = program
   .option('--client <name>', 'Filter by client')
   .option('--project <name>', 'Filter by project')
   .option('--agent <name>', 'Filter by agent')
-  .option('--format <type>', 'Output format (terminal, pdf, or html)', 'terminal')
+  .option('--format <type>', 'Output format (terminal, pdf, html, discord, slack, telegram, markdown)', 'terminal')
   .option('--output <path>', 'Output file path (for pdf/html format)')
   .option('--detailed', 'Show individual entries')
+  .option('--redact', 'Redact task descriptions for privacy')
+  .option('--summary-only', 'Show only project/client totals')
   .option('--save', 'Save report to database')
   .option('--name <name>', 'Name for saved report')
   .action(async (opts) => {
@@ -466,11 +617,36 @@ const reportCmd = program
       });
       reportContent = fs.readFileSync(outputPath).toString('base64');
       console.log(`  PDF report saved to: ${outputPath}`);
+    } else if (['discord', 'slack', 'telegram', 'markdown'].includes(opts.format)) {
+      // Platform formatters
+      const { formatTimesheet } = await import('../reports/formatters/index');
+      const output = formatTimesheet(ts, opts.format, { redact: opts.redact, summaryOnly: opts.summaryOnly, clientName: opts.client });
+      console.log(output);
     } else {
       // Terminal output
       if (program.opts().json) {
-        reportContent = JSON.stringify(ts);
-        console.log(reportContent);
+        // Apply redaction if needed
+        if (opts.redact) {
+          for (const entry of ts.entries) {
+            entry.task = `${entry.category} task`;
+          }
+        }
+        if (opts.summaryOnly) {
+          console.log(JSON.stringify({
+            period_start: ts.period_start,
+            period_end: ts.period_end,
+            total_entries: ts.total_entries,
+            total_agent_hours: ts.total_agent_hours,
+            total_human_equiv_hours: ts.total_human_equiv_hours,
+            total_cost_usd: ts.total_cost_usd,
+            total_savings_usd: ts.total_savings_usd,
+            by_project: ts.by_project,
+            by_category: ts.by_category,
+          }));
+        } else {
+          reportContent = JSON.stringify(ts);
+          console.log(reportContent);
+        }
       } else {
         const totalAgentRuntimeMin = ts.entries.reduce((s, r) => s + (r.agent_total_runtime_minutes || 0), 0);
 
@@ -1604,6 +1780,7 @@ program
   .option('--limit <n>', 'Max entries', '50')
   .option('--approved', 'Show only approved entries')
   .option('--unapproved', 'Show only unapproved entries')
+  .option('--redact', 'Redact task descriptions for privacy')
   .action(async (opts) => {
     const config = loadConfig(resolveDataDir(opts));
     const clawck = await new Clawck(config).ready();
@@ -1622,13 +1799,21 @@ program
       approved: approvedFilter,
     });
 
+    // Apply redaction if requested
+    if (opts.redact) {
+      for (const e of entries) {
+        e.task = `${e.category} task`;
+        e.summary = '';
+      }
+    }
+
     if (program.opts().json) {
       console.log(JSON.stringify(entries));
       clawck.close();
       return;
     }
 
-    printEntryTable(entries);
+    printEntryTable(entries, opts.redact);
     clawck.close();
   });
 
@@ -1672,6 +1857,8 @@ program
   .option('--agent <name>', 'Update agent')
   .option('--category <type>', 'Update category')
   .option('--summary <text>', 'Update summary')
+  .option('--needs-approval', 'Queue edit for approval instead of applying immediately')
+  .option('--reason <text>', 'Reason for the edit (used with --needs-approval)')
   .action(async (id, opts) => {
     const config = loadConfig(resolveDataDir(opts));
     const clawck = await new Clawck(config).ready();
@@ -1691,6 +1878,27 @@ program
     if (opts.summary) updates.summary = opts.summary;
     if (opts.duration !== undefined) {
       updates.end = new Date(new Date(entry.start).getTime() + opts.duration * 60000).toISOString();
+    }
+
+    // If --needs-approval is set, queue the edit instead of applying immediately
+    if (opts.needsApproval) {
+      const pendingEdit = {
+        changes: updates,
+        requested_by: opts.agent || 'cli',
+        requested_at: new Date().toISOString(),
+        reason: opts.reason,
+      };
+      const updated = clawck.setPendingEdit(entry.id, pendingEdit);
+
+      if (program.opts().json) {
+        console.log(JSON.stringify(updated));
+      } else {
+        console.log(`  Edit queued for approval: ${entry.task}`);
+        console.log(`  ID: ${entry.id.slice(0, 8)}  Project: ${entry.project}`);
+        console.log(`  Approve with: clawck edits approve ${entry.id.slice(0, 8)}`);
+      }
+      clawck.close();
+      return;
     }
 
     const updated = clawck.update(entry.id, updates);
@@ -1718,12 +1926,37 @@ program
   .option('--client <name>', 'Filter by client')
   .option('--project <name>', 'Filter by project')
   .option('--agent <name>', 'Filter by agent')
+  .option('--redact', 'Redact task descriptions for privacy')
+  .option('--summary-only', 'Export summary totals only (no individual entries)')
   .action(async (opts) => {
     const config = loadConfig(resolveDataDir(opts));
     const clawck = await new Clawck(config).ready();
     const days = parseInt(opts.days) || 7;
     const from = new Date(Date.now() - days * 86400000).toISOString();
     const to = new Date().toISOString();
+
+    // Summary-only mode: export timesheet summary instead of entries
+    if (opts.summaryOnly) {
+      const ts = clawck.timesheet(from, to, {
+        client: opts.client,
+        project: opts.project,
+        agent: opts.agent,
+      });
+      console.log(JSON.stringify({
+        period_start: ts.period_start,
+        period_end: ts.period_end,
+        total_entries: ts.total_entries,
+        total_agent_hours: ts.total_agent_hours,
+        total_human_equiv_hours: ts.total_human_equiv_hours,
+        total_cost_usd: ts.total_cost_usd,
+        total_savings_usd: ts.total_savings_usd,
+        by_project: ts.by_project,
+        by_category: ts.by_category,
+        by_client: ts.by_client,
+      }, null, 2));
+      clawck.close();
+      return;
+    }
 
     const entries = clawck.query({
       client: opts.client,
@@ -1733,6 +1966,14 @@ program
       to,
       limit: 10000,
     });
+
+    // Apply redaction if requested
+    if (opts.redact) {
+      for (const e of entries) {
+        e.task = `${e.category} task`;
+        e.summary = '';
+      }
+    }
 
     if (opts.format === 'atp') {
       const baselines = clawck.getBaselines();
@@ -2228,7 +2469,7 @@ function resolveEntryId(clawck: Clawck, idPrefix: string): ClawckEntry | null {
   return matches[0];
 }
 
-function printEntryTable(entries: ClawckEntry[]): void {
+function printEntryTable(entries: ClawckEntry[], redact = false): void {
   if (entries.length === 0) {
     console.log('\n  No entries found.\n');
     return;
@@ -2243,7 +2484,8 @@ function printEntryTable(entries: ClawckEntry[]): void {
       ? (new Date(e.end).getTime() - new Date(e.start).getTime()) / 60000
       : (Date.now() - new Date(e.start).getTime()) / 60000;
     const dur = e.end ? formatDuration(durationMin) : 'running';
-    const task = e.task.length > 40 ? e.task.slice(0, 37) + '...' : e.task;
+    const taskText = redact ? `${e.category} task` : e.task;
+    const task = taskText.length > 40 ? taskText.slice(0, 37) + '...' : taskText;
     const time = new Date(e.start).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
     const approved = e.approved ? 'v' : '-';
     console.log(`  ${e.id.slice(0, 8).padEnd(10)} ${task.padEnd(42)} ${dur.padEnd(10)} ${e.project.slice(0, 12).padEnd(12)} ${e.agent.padEnd(12)} ${approved.padEnd(4)} ${time}`);
@@ -2251,6 +2493,124 @@ function printEntryTable(entries: ClawckEntry[]): void {
   console.log(`\n  ${entries.length} entries\n`);
 }
 
+
+// ─── Edits (pending edits management) ────────────────────
+
+const edits = program
+  .command('edits')
+  .description('Manage pending edits awaiting approval');
+
+edits
+  .command('list')
+  .alias('ls')
+  .description('List all pending edits')
+  .option('-d, --dir <path>', 'Data directory')
+  .action(async (opts) => {
+    const config = loadConfig(resolveDataDir(opts));
+    const clawck = await new Clawck(config).ready();
+    const pendingEdits = clawck.getPendingEdits();
+
+    if (program.opts().json) {
+      console.log(JSON.stringify(pendingEdits));
+      clawck.close();
+      return;
+    }
+
+    if (pendingEdits.length === 0) {
+      console.log('\n  No pending edits.\n');
+      clawck.close();
+      return;
+    }
+
+    console.log(`\n  Pending Edits (${pendingEdits.length}):`);
+    console.log(`  ${'─'.repeat(70)}`);
+
+    for (const edit of pendingEdits) {
+      const entry = edit.current;
+      const pending = edit.pending;
+      const changeKeys = Object.keys(pending.changes || {}).join(', ') || 'none';
+      console.log(`\n  ${entry.id.slice(0, 8)}  ${entry.task.slice(0, 50)}`);
+      console.log(`     Project: ${entry.project}  Client: ${entry.client}`);
+      console.log(`     Changes: ${changeKeys}`);
+      if (pending.reason) {
+        console.log(`     Reason:  ${pending.reason}`);
+      }
+      console.log(`     Requested: ${pending.requested_at.split('T')[0]} by ${pending.requested_by || 'unknown'}`);
+    }
+    console.log(`\n  Approve with: clawck edits approve <id>`);
+    console.log(`  Reject with:  clawck edits reject <id>\n`);
+    clawck.close();
+  });
+
+edits
+  .command('approve <id>')
+  .description('Approve and apply a pending edit')
+  .option('-d, --dir <path>', 'Data directory')
+  .action(async (id, opts) => {
+    const config = loadConfig(resolveDataDir(opts));
+    const clawck = await new Clawck(config).ready();
+    const entry = resolveEntryId(clawck, id);
+
+    if (!entry) {
+      clawck.close();
+      process.exit(1);
+    }
+
+    if (!entry.edit_pending) {
+      if (program.opts().json) {
+        console.log(JSON.stringify({ ok: false, error: 'No pending edit for this entry' }));
+      } else {
+        console.error(`  No pending edit for entry: ${entry.id.slice(0, 8)}`);
+      }
+      clawck.close();
+      process.exit(1);
+    }
+
+    const approved = clawck.approvePendingEdit(entry.id);
+
+    if (program.opts().json) {
+      console.log(JSON.stringify(approved));
+    } else {
+      console.log(`  Edit approved and applied: ${approved!.task}`);
+      console.log(`  ID: ${approved!.id.slice(0, 8)}  Project: ${approved!.project}`);
+    }
+    clawck.close();
+  });
+
+edits
+  .command('reject <id>')
+  .description('Reject and discard a pending edit')
+  .option('-d, --dir <path>', 'Data directory')
+  .action(async (id, opts) => {
+    const config = loadConfig(resolveDataDir(opts));
+    const clawck = await new Clawck(config).ready();
+    const entry = resolveEntryId(clawck, id);
+
+    if (!entry) {
+      clawck.close();
+      process.exit(1);
+    }
+
+    if (!entry.edit_pending) {
+      if (program.opts().json) {
+        console.log(JSON.stringify({ ok: false, error: 'No pending edit for this entry' }));
+      } else {
+        console.error(`  No pending edit for entry: ${entry.id.slice(0, 8)}`);
+      }
+      clawck.close();
+      process.exit(1);
+    }
+
+    const rejected = clawck.rejectPendingEdit(entry.id);
+
+    if (program.opts().json) {
+      console.log(JSON.stringify(rejected));
+    } else {
+      console.log(`  Edit rejected: ${rejected!.task}`);
+      console.log(`  ID: ${rejected!.id.slice(0, 8)}`);
+    }
+    clawck.close();
+  });
 
 function loadConfig(dir: string): ClawckConfig {
   const dataDir = path.resolve(dir);

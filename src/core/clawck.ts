@@ -9,7 +9,7 @@ import {
   TimesheetSummary, SPEC_VERSION, DEFAULT_CONFIG, TrackingPattern, TaskCategory,
   StoredReport, ReportMetadata, ReportPeriod, ReportStyle, ReportFormat,
   ProductivityScore, DayScore, CategoryTrends, WeekTrend, CategoryTrendEntry, TASK_CATEGORIES,
-  Digest, DigestPeriod, DigestHighlight,
+  Digest, DigestPeriod, DigestHighlight, PendingEdit, PendingEditEntry, ChannelMapping,
 } from './types';
 import { estimateCost } from './pricing';
 import { ClawckDB } from './database';
@@ -849,6 +849,61 @@ export class Clawck {
       default_tokens_per_second: overrides.default_tokens_per_second ?? DEFAULT_RUNTIME_CONFIG.default_tokens_per_second,
       avg_tool_duration_ms: overrides.avg_tool_duration_ms ?? DEFAULT_RUNTIME_CONFIG.avg_tool_duration_ms,
     };
+  }
+
+  // ─── Pending Edits ──────────────────────────────────────
+
+  setPendingEdit(entryId: string, edit: PendingEdit): ClawckEntry | null {
+    return this._db.setPendingEdit(entryId, edit);
+  }
+
+  clearPendingEdit(entryId: string): ClawckEntry | null {
+    return this._db.clearPendingEdit(entryId);
+  }
+
+  getPendingEdits(): PendingEditEntry[] {
+    return this._db.getPendingEdits();
+  }
+
+  approvePendingEdit(entryId: string): ClawckEntry | null {
+    return this._db.approvePendingEdit(entryId);
+  }
+
+  rejectPendingEdit(entryId: string): ClawckEntry | null {
+    return this._db.rejectPendingEdit(entryId);
+  }
+
+  // ─── Channel Mappings ──────────────────────────────────
+
+  addChannelMapping(mapping: Omit<ChannelMapping, 'id' | 'created_at' | 'updated_at'>): ChannelMapping {
+    const now = new Date().toISOString();
+    const fullMapping: ChannelMapping = {
+      ...mapping,
+      id: uuidv4(),
+      created_at: now,
+      updated_at: now,
+    };
+    return this._db.insertChannelMapping(fullMapping);
+  }
+
+  updateChannelMapping(id: string, updates: Partial<ChannelMapping>): ChannelMapping | null {
+    return this._db.updateChannelMapping(id, updates);
+  }
+
+  deleteChannelMapping(id: string): boolean {
+    return this._db.deleteChannelMapping(id);
+  }
+
+  getChannelMapping(id: string): ChannelMapping | null {
+    return this._db.getChannelMappingById(id);
+  }
+
+  getChannelMappingByChannelId(channelId: string): ChannelMapping | null {
+    return this._db.getChannelMappingByChannelId(channelId);
+  }
+
+  getChannelMappings(): ChannelMapping[] {
+    return this._db.getChannelMappings();
   }
 
   // ─── Cleanup ───────────────────────────────────────────

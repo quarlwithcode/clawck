@@ -232,6 +232,44 @@ export const PLATFORMS: Record<Exclude<Platform, 'unknown'>, PlatformInstallInfo
       } catch { return false; }
     },
   },
+
+  openclaw: {
+    name: 'openclaw',
+    displayName: 'OpenClaw',
+    configPaths: [
+      path.join(homeDir(), '.openclaw', 'hooks'),
+    ],
+    snippetFile: 'hooks-openclaw.json',
+    generate: () => JSON.stringify({
+      hooks: {
+        pre_prompt: [
+          {
+            type: "command",
+            command: "clawck hook start --platform openclaw"
+          }
+        ],
+        post_agent: [
+          {
+            type: "command",
+            command: "clawck hook stop --platform openclaw"
+          }
+        ]
+      }
+    }, null, 2),
+    detect: () => {
+      const dir = path.join(homeDir(), '.openclaw', 'hooks');
+      if (!fs.existsSync(dir)) return false;
+      try {
+        const files = fs.readdirSync(dir);
+        return files.some(f => {
+          try {
+            const content = fs.readFileSync(path.join(dir, f), 'utf-8');
+            return content.includes('clawck');
+          } catch { return false; }
+        });
+      } catch { return false; }
+    },
+  },
 };
 
 export const PLATFORM_NAMES = Object.keys(PLATFORMS) as Exclude<Platform, 'unknown'>[];

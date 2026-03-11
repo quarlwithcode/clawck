@@ -5,7 +5,7 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
-import { ClawckEntry, TimesheetSummary, TimesheetRow, ClawckConfig, DEFAULT_HUMAN_EQUIVALENTS, ClientSummary, ProjectSummary, CategorySummary, SyncState, TaskCategory, StoredReport, ReportMetadata, ReportPeriod, ReportStyle, ReportFormat } from './types';
+import { ClawckEntry, TimesheetSummary, TimesheetRow, ClawckConfig, DEFAULT_HUMAN_EQUIVALENTS, ClientSummary, ProjectSummary, CategorySummary, SyncState, TaskCategory, StoredReport, ReportMetadata, ReportPeriod, ReportStyle, ReportFormat, PendingEdit, PendingEditEntry, ChannelMapping } from './types';
 import { PersonalBaseline } from './personal';
 import { computeMergedRuntimeMs } from './runtime';
 
@@ -33,7 +33,7 @@ export class ClawckDB {
   // columns and start from the right version.
 
   /** Current schema version — bump when adding a new migration. */
-  static readonly SCHEMA_VERSION = 5;
+  static readonly SCHEMA_VERSION = 6;
 
   private static readonly MIGRATIONS: Array<(db: Database.Database) => void> = [
     // ── Migration 1: initial schema (entries + sync_state + indexes) ──
@@ -104,6 +104,26 @@ export class ClawckDB {
       )`);
       db.exec(`CREATE INDEX IF NOT EXISTS idx_reports_created ON reports(created_at)`);
     },
+
+    // ── Migration 6: pending edits + channel mappings ──
+    (db) => {
+      // Add edit_pending and pending_edits columns to entries
+      db.exec(`ALTER TABLE entries ADD COLUMN edit_pending INTEGER NOT NULL DEFAULT 0`);
+      db.exec(`ALTER TABLE entries ADD COLUMN pending_edits TEXT`);
+
+      // Create channel_mappings table for auto-categorization
+      db.exec(`CREATE TABLE IF NOT EXISTS channel_mappings (
+        id TEXT PRIMARY KEY,
+        channel_id TEXT NOT NULL UNIQUE,
+        channel_name TEXT NOT NULL DEFAULT '',
+        project TEXT,
+        client TEXT,
+        default_category TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_channel_mappings_channel_id ON channel_mappings(channel_id)`);
+    },
   ];
 
   private migrate(): void {
@@ -165,6 +185,7 @@ export class ClawckDB {
    */
   private detectLegacyVersion(): number {
     // Walk backwards from the latest migration to find the highest already-applied one
+    if (this.tableExists('channel_mappings')) return 6;
     if (this.tableExists('reports')) return 5;
     if (this.tableExists('personal_baselines')) return 4;
     if (this.columnExists('entries', 'agent_runtime_ms')) return 3;
@@ -315,7 +336,7 @@ export class ClawckDB {
   }
 
   private rowToEntry(row: any): ClawckEntry {
-    return { id: row.id, agent: row.agent, model: row.model, client: row.client, project: row.project, task: row.task, category: row.category, start: row.start, end: row.end_, status: row.status, tokens_in: row.tokens_in, tokens_out: row.tokens_out, cost_usd: row.cost_usd, tool_calls: row.tool_calls, summary: row.summary, tags: JSON.parse(row.tags || '[]'), source: row.source, spec_version: row.spec_version, created_at: row.created_at, updated_at: row.updated_at, approved: !!row.approved, agent_runtime_ms: row.agent_runtime_ms ?? null, wall_clock_ms: row.wall_clock_ms ?? null };
+    return { id: row.id, agent: row.agent, model: row.model, client: row.client, project: row.project, task: row.task, category: row.category, start: row.start, end: row.end_, status: row.status, tokens_in: row.tokens_in, tokens_out: row.tokens_out, cost_usd: row.cost_usd, tool_calls: row.tool_calls, summary: row.summary, tags: JSON.parse(row.tags || '[]'), source: row.source, spec_version: row.spec_version, created_at: row.created_at, updated_at: row.updated_at, approved: !!row.approved, agent_runtime_ms: row.agent_runtime_ms ?? null, wall_clock_ms: row.wall_clock_ms ?? null, edit_pending: !!row.edit_pending, pending_edits: row.pending_edits ? JSON.parse(row.pending_edits) : null };
   }
 
   upsert(entry: ClawckEntry): ClawckEntry {
@@ -468,6 +489,113 @@ export class ClawckDB {
       content: '',
       metadata: JSON.parse(row.metadata || '{}') as ReportMetadata,
       created_at: row.created_at,
+    };
+  }
+
+  // ─── Pending Edits ─────────────────────────────────────────
+
+  setPendingEdit(entryId: string, edit: PendingEdit): ClawckEntry | null {
+    const existing = this.getById(entryId);
+    if (!existing) return null;
+    this.db.prepare(
+      `UPDATE entries SET edit_pending = 1, pending_edits = ?, updated_at = datetime('now') WHERE id = ?`
+    ).run(JSON.stringify(edit), entryId);
+    return this.getById(entryId);
+  }
+
+  clearPendingEdit(entryId: string): ClawckEntry | null {
+    const existing = this.getById(entryId);
+    if (!existing) return null;
+    this.db.prepare(
+      `UPDATE entries SET edit_pending = 0, pending_edits = NULL, updated_at = datetime('now') WHERE id = ?`
+    ).run(entryId);
+    return this.getById(entryId);
+  }
+
+  getPendingEdits(): PendingEditEntry[] {
+    const rows = this.db.prepare(
+      `SELECT * FROM entries WHERE edit_pending = 1 ORDER BY updated_at DESC`
+    ).all() as any[];
+    return rows.map(row => ({
+      id: row.id,
+      current: this.rowToEntry(row),
+      pending: JSON.parse(row.pending_edits || '{}') as PendingEdit,
+    }));
+  }
+
+  approvePendingEdit(entryId: string): ClawckEntry | null {
+    const existing = this.getById(entryId);
+    if (!existing || !existing.edit_pending) return null;
+    const pending = existing.pending_edits;
+    if (!pending) return null;
+    // Apply the pending changes
+    const updates: Partial<ClawckEntry> = pending.changes;
+    const entry = this.update(entryId, updates);
+    if (!entry) return null;
+    // Clear the pending edit flag
+    return this.clearPendingEdit(entryId);
+  }
+
+  rejectPendingEdit(entryId: string): ClawckEntry | null {
+    return this.clearPendingEdit(entryId);
+  }
+
+  // ─── Channel Mappings ─────────────────────────────────────
+
+  insertChannelMapping(mapping: ChannelMapping): ChannelMapping {
+    this.db.prepare(
+      `INSERT INTO channel_mappings (id, channel_id, channel_name, project, client, default_category, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)`
+    ).run(mapping.id, mapping.channel_id, mapping.channel_name, mapping.project || null, mapping.client || null, mapping.default_category || null, mapping.created_at, mapping.updated_at);
+    return mapping;
+  }
+
+  updateChannelMapping(id: string, updates: Partial<ChannelMapping>): ChannelMapping | null {
+    const existing = this.getChannelMappingById(id);
+    if (!existing) return null;
+    const fields: string[] = [];
+    const values: any[] = [];
+    if (updates.channel_id !== undefined) { fields.push('channel_id = ?'); values.push(updates.channel_id); }
+    if (updates.channel_name !== undefined) { fields.push('channel_name = ?'); values.push(updates.channel_name); }
+    if (updates.project !== undefined) { fields.push('project = ?'); values.push(updates.project || null); }
+    if (updates.client !== undefined) { fields.push('client = ?'); values.push(updates.client || null); }
+    if (updates.default_category !== undefined) { fields.push('default_category = ?'); values.push(updates.default_category || null); }
+    fields.push("updated_at = datetime('now')");
+    if (fields.length === 1) return existing;
+    values.push(id);
+    this.db.prepare(`UPDATE channel_mappings SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+    return this.getChannelMappingById(id);
+  }
+
+  deleteChannelMapping(id: string): boolean {
+    const result = this.db.prepare('DELETE FROM channel_mappings WHERE id = ?').run(id);
+    return result.changes > 0;
+  }
+
+  getChannelMappingById(id: string): ChannelMapping | null {
+    const row = this.db.prepare('SELECT * FROM channel_mappings WHERE id = ?').get(id) as any;
+    return row ? this.rowToChannelMapping(row) : null;
+  }
+
+  getChannelMappingByChannelId(channelId: string): ChannelMapping | null {
+    const row = this.db.prepare('SELECT * FROM channel_mappings WHERE channel_id = ?').get(channelId) as any;
+    return row ? this.rowToChannelMapping(row) : null;
+  }
+
+  getChannelMappings(): ChannelMapping[] {
+    const rows = this.db.prepare('SELECT * FROM channel_mappings ORDER BY channel_name').all() as any[];
+    return rows.map(r => this.rowToChannelMapping(r));
+  }
+
+  private rowToChannelMapping(row: any): ChannelMapping {
+    return {
+      id: row.id,
+      channel_id: row.channel_id,
+      channel_name: row.channel_name || '',
+      project: row.project || undefined,
+      client: row.client || undefined,
+      default_category: row.default_category as TaskCategory || undefined,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
     };
   }
 

@@ -93,6 +93,12 @@ export interface ClawckEntry {
 
   /** Embedded comparison data */
   comparison?: EntryComparison;
+
+  /** Whether this entry has pending edits awaiting approval */
+  edit_pending?: boolean;
+
+  /** JSON-serialized pending edits (stored as string in DB) */
+  pending_edits?: PendingEdit | null;
 }
 
 // ─── Comparison ─────────────────────────────────────────
@@ -498,4 +504,59 @@ export interface Digest {
       direction: 'up' | 'down' | 'same';
     };
   };
+}
+
+// ─── Pending Edits ────────────────────────────────────────
+
+export interface PendingEdit {
+  /** Fields that are proposed to change */
+  changes: Partial<Pick<ClawckEntry, 'task' | 'project' | 'client' | 'category' | 'agent' | 'tags' | 'summary'>>;
+
+  /** Who requested the edit */
+  requested_by?: string;
+
+  /** When the edit was requested */
+  requested_at: string;
+
+  /** Optional reason for the edit */
+  reason?: string;
+}
+
+export interface PendingEditEntry {
+  /** The entry ID */
+  id: string;
+
+  /** Current entry data */
+  current: ClawckEntry;
+
+  /** Proposed changes */
+  pending: PendingEdit;
+}
+
+// ─── Channel Mappings ─────────────────────────────────────
+
+export interface ChannelMapping {
+  /** Unique mapping ID (UUID) */
+  id: string;
+
+  /** External channel identifier (e.g., Slack channel ID, Discord channel ID) */
+  channel_id: string;
+
+  /** Human-readable channel name */
+  channel_name: string;
+
+  /** Auto-assign project for entries from this channel */
+  project?: string;
+
+  /** Auto-assign client for entries from this channel */
+  client?: string;
+
+  /** Auto-assign category for entries from this channel */
+  default_category?: TaskCategory;
+
+  /** Creation timestamp */
+  created_at: string;
+
+  /** Last update timestamp */
+  updated_at: string;
 }

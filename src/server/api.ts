@@ -127,6 +127,50 @@ export async function createServer(config: Partial<ClawckConfig> = {}): Promise<
     }
   });
 
+  // ─── Pending Edits ─────────────────────────────────────
+
+  app.get('/api/edits', (_req, res) => {
+    const edits = clawck.getPendingEdits();
+    res.json(edits);
+  });
+
+  app.post('/api/entries/:id/pending-edit', (req, res) => {
+    try {
+      const entry = clawck.get(req.params.id);
+      if (!entry) return res.status(404).json({ error: 'Entry not found' });
+      const pendingEdit = {
+        changes: req.body.changes || {},
+        requested_by: req.body.requested_by || 'api',
+        requested_at: new Date().toISOString(),
+        reason: req.body.reason,
+      };
+      const updated = clawck.setPendingEdit(req.params.id, pendingEdit);
+      res.json(updated);
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/edits/:id/approve', (req, res) => {
+    try {
+      const entry = clawck.approvePendingEdit(req.params.id);
+      if (!entry) return res.status(404).json({ error: 'Entry not found or no pending edit' });
+      res.json(entry);
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/edits/:id/reject', (req, res) => {
+    try {
+      const entry = clawck.rejectPendingEdit(req.params.id);
+      if (!entry) return res.status(404).json({ error: 'Entry not found or no pending edit' });
+      res.json(entry);
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
   // ─── Query Entries ─────────────────────────────────────
 
   app.get('/api/entries', (req, res) => {
@@ -221,8 +265,9 @@ export async function createServer(config: Partial<ClawckConfig> = {}): Promise<
 
   app.get('/api/timesheet', (req, res) => {
     const now = new Date();
-    const weekAgo = new Date(now.getTime() - 7 * 24 * 3600000);
-    const from = (req.query.from as string) || weekAgo.toISOString();
+    const days = safeInt(req.query.days as string, 7);
+    const defaultFrom = new Date(now.getTime() - days * 24 * 3600000);
+    const from = (req.query.from as string) || defaultFrom.toISOString();
     const to = (req.query.to as string) || now.toISOString();
 
     const timesheet = clawck.timesheet(from, to, {
@@ -230,7 +275,33 @@ export async function createServer(config: Partial<ClawckConfig> = {}): Promise<
       project: req.query.project as string,
       agent: req.query.agent as string,
     });
-    res.json(timesheet);
+
+    // Apply redaction if requested
+    const redact = req.query.redact === 'true';
+    const summaryOnly = req.query.summary_only === 'true';
+
+    if (redact) {
+      for (const entry of timesheet.entries) {
+        entry.task = `${entry.category} task`;
+      }
+    }
+
+    if (summaryOnly) {
+      res.json({
+        period_start: timesheet.period_start,
+        period_end: timesheet.period_end,
+        total_entries: timesheet.total_entries,
+        total_agent_hours: timesheet.total_agent_hours,
+        total_human_equiv_hours: timesheet.total_human_equiv_hours,
+        total_cost_usd: timesheet.total_cost_usd,
+        total_savings_usd: timesheet.total_savings_usd,
+        by_project: timesheet.by_project,
+        by_category: timesheet.by_category,
+        by_client: timesheet.by_client,
+      });
+    } else {
+      res.json(timesheet);
+    }
   });
 
   // ─── Filter Options ────────────────────────────────────
