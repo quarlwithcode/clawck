@@ -1,6 +1,6 @@
 {
   "name": "clawck",
-  "version": "0.6.0",
+  "version": "0.5.6",
   "description": "⏱️🦀 System of record for AI agent work.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

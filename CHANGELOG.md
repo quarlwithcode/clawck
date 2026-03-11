@@ -5,7 +5,7 @@ All notable changes to Clawck are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Clawck uses [Semantic Versioning](https://semver.org/).
 
-## [0.6.0] - 2026-03-11
+## [0.5.6] - 2026-03-11
 
 ### Added
 - **Productivity Scoring** — `clawck score` command and `GET /api/score` endpoint
