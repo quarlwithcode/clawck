@@ -171,6 +171,68 @@ export async function createServer(config: Partial<ClawckConfig> = {}): Promise<
     }
   });
 
+  // ─── Channel Mappings ──────────────────────────────────
+
+  app.get('/api/channels', (_req, res) => {
+    res.json(clawck.getChannelMappings());
+  });
+
+  app.get('/api/channels/:id', (req, res) => {
+    let mapping = clawck.getChannelMapping(req.params.id);
+    if (!mapping) {
+      mapping = clawck.getChannelMappingByChannelId(req.params.id);
+    }
+    if (!mapping) return res.status(404).json({ error: 'Channel mapping not found' });
+    res.json(mapping);
+  });
+
+  app.post('/api/channels', (req, res) => {
+    try {
+      const existing = clawck.getChannelMappingByChannelId(req.body.channel_id);
+      if (existing) {
+        return res.status(409).json({ error: 'Channel mapping already exists', existing });
+      }
+      const mapping = clawck.addChannelMapping({
+        channel_id: req.body.channel_id,
+        channel_name: req.body.channel_name || '',
+        project: req.body.project,
+        client: req.body.client,
+        default_category: req.body.default_category,
+      });
+      res.status(201).json(mapping);
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.patch('/api/channels/:id', (req, res) => {
+    try {
+      let mapping = clawck.getChannelMapping(req.params.id);
+      if (!mapping) {
+        mapping = clawck.getChannelMappingByChannelId(req.params.id);
+      }
+      if (!mapping) return res.status(404).json({ error: 'Channel mapping not found' });
+      const updated = clawck.updateChannelMapping(mapping.id, req.body);
+      res.json(updated);
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.delete('/api/channels/:id', (req, res) => {
+    try {
+      let mapping = clawck.getChannelMapping(req.params.id);
+      if (!mapping) {
+        mapping = clawck.getChannelMappingByChannelId(req.params.id);
+      }
+      if (!mapping) return res.status(404).json({ error: 'Channel mapping not found' });
+      clawck.deleteChannelMapping(mapping.id);
+      res.json({ ok: true, deleted: mapping });
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
   // ─── Query Entries ─────────────────────────────────────
 
   app.get('/api/entries', (req, res) => {

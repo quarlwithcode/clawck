@@ -178,6 +178,9 @@ export interface ClawckConfig {
 
   /** Your personal hourly rate for savings calculations */
   personal_rate_usd?: number;
+
+  /** Keywords mapping to auto-detect category from task description */
+  category_keywords?: Record<TaskCategory, string[]>;
 }
 
 export interface RemoteSource {

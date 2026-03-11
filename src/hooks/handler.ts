@@ -3,13 +3,32 @@
  * Core orchestrator: wires platform adapters → clawck core → session files.
  */
 
-import { ClawckConfig } from '../core/types';
+import { ClawckConfig, TaskCategory, TASK_CATEGORIES } from '../core/types';
 import { Clawck } from '../core/clawck';
 import { HookContext } from './types';
 import { saveSession, loadSession, clearSession, cleanStaleSessions } from './session';
 import { logger } from '../core/logger';
 import fs from 'fs';
 import path from 'path';
+
+/**
+ * Auto-detect category from task description using configured keywords.
+ */
+function detectCategoryFromKeywords(
+  task: string,
+  keywords: Record<TaskCategory, string[]> | undefined
+): TaskCategory | undefined {
+  if (!keywords) return undefined;
+  const lowerTask = task.toLowerCase();
+
+  for (const category of TASK_CATEGORIES) {
+    const catKeywords = keywords[category];
+    if (catKeywords && catKeywords.some(kw => lowerTask.includes(kw.toLowerCase()))) {
+      return category;
+    }
+  }
+  return undefined;
+}
 
 function logError(dataDir: string, message: string): void {
   try {
@@ -37,10 +56,38 @@ export async function handleHookStart(config: ClawckConfig, context: HookContext
     const clawck = await new Clawck(config).ready();
 
     try {
+      // Auto-fill from channel mapping if channel_id is provided
+      let project = context.project;
+      let client: string | undefined;
+      let category: TaskCategory | undefined;
+
+      // Check for channel_id in raw context (from Discord/Slack hooks)
+      const rawObj = context.raw as Record<string, unknown> | undefined;
+      const channelId = rawObj?.channel_id as string | undefined;
+
+      if (channelId) {
+        const mapping = clawck.getChannelMappingByChannelId(channelId);
+        if (mapping) {
+          logger.debug('hooks', `Found channel mapping for ${channelId}: project=${mapping.project} client=${mapping.client} category=${mapping.default_category}`);
+          project = mapping.project || project;
+          client = mapping.client;
+          category = mapping.default_category;
+        }
+      }
+
+      // Auto-detect category from task keywords if not already set
+      if (!category && context.task) {
+        category = detectCategoryFromKeywords(context.task, config.category_keywords);
+        if (category) {
+          logger.debug('hooks', `Auto-detected category from keywords: ${category}`);
+        }
+      }
+
       const entry = clawck.start({
         task: context.task,
-        project: context.project,
-        client: undefined,
+        project,
+        client,
+        category,
         agent: context.agent,
         model: context.model,
         tags: ['hook', context.platform],

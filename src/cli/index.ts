@@ -2612,6 +2612,196 @@ edits
     clawck.close();
   });
 
+// ─── Channel Mappings ────────────────────────────────────
+
+const channel = program
+  .command('channel')
+  .description('Manage channel-to-project/client mappings for auto-categorization');
+
+channel
+  .command('list')
+  .alias('ls')
+  .description('List all channel mappings')
+  .option('-d, --dir <path>', 'Data directory')
+  .action(async (opts) => {
+    const config = loadConfig(resolveDataDir(opts));
+    const clawck = await new Clawck(config).ready();
+    const mappings = clawck.getChannelMappings();
+
+    if (program.opts().json) {
+      console.log(JSON.stringify(mappings));
+      clawck.close();
+      return;
+    }
+
+    if (mappings.length === 0) {
+      console.log('\n  No channel mappings configured.\n');
+      console.log('  Add one with: clawck channel add <channel_id> --project P --client C\n');
+      clawck.close();
+      return;
+    }
+
+    console.log(`\n  Channel Mappings (${mappings.length}):`);
+    console.log(`  ${'─'.repeat(70)}`);
+    console.log(`  ${'Channel ID'.padEnd(20)} ${'Name'.padEnd(20)} ${'Project'.padEnd(15)} ${'Client'.padEnd(15)} Category`);
+    console.log(`  ${'─'.repeat(70)}`);
+
+    for (const m of mappings) {
+      console.log(`  ${m.channel_id.slice(0, 18).padEnd(20)} ${(m.channel_name || '-').slice(0, 18).padEnd(20)} ${(m.project || '-').padEnd(15)} ${(m.client || '-').padEnd(15)} ${m.default_category || '-'}`);
+    }
+    console.log('');
+    clawck.close();
+  });
+
+channel
+  .command('add <channel_id>')
+  .description('Add a channel mapping')
+  .option('-d, --dir <path>', 'Data directory')
+  .option('--name <name>', 'Channel name (for display)')
+  .option('--project <name>', 'Auto-assign project')
+  .option('--client <name>', 'Auto-assign client')
+  .option('--category <type>', 'Default category')
+  .action(async (channelId, opts) => {
+    const config = loadConfig(resolveDataDir(opts));
+    const clawck = await new Clawck(config).ready();
+
+    // Check if mapping already exists
+    const existing = clawck.getChannelMappingByChannelId(channelId);
+    if (existing) {
+      if (program.opts().json) {
+        console.log(JSON.stringify({ ok: false, error: 'Channel mapping already exists' }));
+      } else {
+        console.error(`  Channel mapping already exists for: ${channelId}`);
+        console.error(`  Use "clawck channel update ${existing.id.slice(0, 8)}" to modify it.`);
+      }
+      clawck.close();
+      process.exit(1);
+    }
+
+    const mapping = clawck.addChannelMapping({
+      channel_id: channelId,
+      channel_name: opts.name || '',
+      project: opts.project,
+      client: opts.client,
+      default_category: opts.category,
+    });
+
+    if (program.opts().json) {
+      console.log(JSON.stringify(mapping));
+    } else {
+      console.log(`  Channel mapping created!`);
+      console.log(`  ID: ${mapping.id.slice(0, 8)}`);
+      console.log(`  Channel: ${mapping.channel_id}${mapping.channel_name ? ` (${mapping.channel_name})` : ''}`);
+      if (mapping.project) console.log(`  Project: ${mapping.project}`);
+      if (mapping.client) console.log(`  Client: ${mapping.client}`);
+      if (mapping.default_category) console.log(`  Category: ${mapping.default_category}`);
+    }
+    clawck.close();
+  });
+
+channel
+  .command('update <id>')
+  .description('Update a channel mapping')
+  .option('-d, --dir <path>', 'Data directory')
+  .option('--name <name>', 'Channel name (for display)')
+  .option('--project <name>', 'Auto-assign project')
+  .option('--client <name>', 'Auto-assign client')
+  .option('--category <type>', 'Default category')
+  .action(async (id, opts) => {
+    const config = loadConfig(resolveDataDir(opts));
+    const clawck = await new Clawck(config).ready();
+
+    // Find the mapping
+    let mapping = clawck.getChannelMapping(id);
+    if (!mapping) {
+      // Try by channel_id
+      mapping = clawck.getChannelMappingByChannelId(id);
+    }
+    if (!mapping) {
+      // Try prefix match
+      const all = clawck.getChannelMappings();
+      const matches = all.filter(m => m.id.startsWith(id));
+      if (matches.length === 1) {
+        mapping = matches[0];
+      } else if (matches.length > 1) {
+        if (program.opts().json) {
+          console.log(JSON.stringify({ ok: false, error: 'Ambiguous ID prefix' }));
+        } else {
+          console.error(`  Ambiguous ID prefix "${id}". Matches:`);
+          for (const m of matches) console.error(`    ${m.id.slice(0, 8)}  ${m.channel_id}`);
+        }
+        clawck.close();
+        process.exit(1);
+      }
+    }
+
+    if (!mapping) {
+      if (program.opts().json) {
+        console.log(JSON.stringify({ ok: false, error: 'Channel mapping not found' }));
+      } else {
+        console.error(`  Channel mapping not found: ${id}`);
+      }
+      clawck.close();
+      process.exit(1);
+    }
+
+    const updates: any = {};
+    if (opts.name !== undefined) updates.channel_name = opts.name;
+    if (opts.project !== undefined) updates.project = opts.project;
+    if (opts.client !== undefined) updates.client = opts.client;
+    if (opts.category !== undefined) updates.default_category = opts.category;
+
+    const updated = clawck.updateChannelMapping(mapping.id, updates);
+
+    if (program.opts().json) {
+      console.log(JSON.stringify(updated));
+    } else {
+      console.log(`  Channel mapping updated!`);
+      console.log(`  ID: ${updated!.id.slice(0, 8)}`);
+      console.log(`  Channel: ${updated!.channel_id}${updated!.channel_name ? ` (${updated!.channel_name})` : ''}`);
+    }
+    clawck.close();
+  });
+
+channel
+  .command('delete <id>')
+  .description('Delete a channel mapping')
+  .option('-d, --dir <path>', 'Data directory')
+  .action(async (id, opts) => {
+    const config = loadConfig(resolveDataDir(opts));
+    const clawck = await new Clawck(config).ready();
+
+    // Find the mapping (same lookup logic)
+    let mapping = clawck.getChannelMapping(id);
+    if (!mapping) {
+      mapping = clawck.getChannelMappingByChannelId(id);
+    }
+    if (!mapping) {
+      const all = clawck.getChannelMappings();
+      const matches = all.filter(m => m.id.startsWith(id));
+      if (matches.length === 1) mapping = matches[0];
+    }
+
+    if (!mapping) {
+      if (program.opts().json) {
+        console.log(JSON.stringify({ ok: false, error: 'Channel mapping not found' }));
+      } else {
+        console.error(`  Channel mapping not found: ${id}`);
+      }
+      clawck.close();
+      process.exit(1);
+    }
+
+    clawck.deleteChannelMapping(mapping.id);
+
+    if (program.opts().json) {
+      console.log(JSON.stringify({ ok: true, deleted: mapping }));
+    } else {
+      console.log(`  Deleted channel mapping: ${mapping.channel_id}`);
+    }
+    clawck.close();
+  });
+
 function loadConfig(dir: string): ClawckConfig {
   const dataDir = path.resolve(dir);
   const defaultConfigPath = path.join(dataDir, 'config.json');
