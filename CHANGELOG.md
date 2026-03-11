@@ -5,6 +5,52 @@ All notable changes to Clawck are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Clawck uses [Semantic Versioning](https://semver.org/).
 
+## [0.5.8] - 2026-03-11
+
+### Added
+- **Live Agent Status CLI** — `clawck status --live` command
+  - Real-time 2-second refresh of running agents
+  - Detailed table: agent, task, runtime, model
+  - API: `GET /api/agents/status` endpoint
+- **Client-Facing Timesheet PDF (Invoice)** — `clawck invoice <client>` command
+  - Professional invoice PDF generation with line items
+  - Options: `--rate` (hourly rate), `--logo`, `--footer`, `--terms`
+  - Auto-generated invoice numbers
+  - Subtotals by project and grand total
+- **Idle & Overwork Alerts** — monitoring system for agent activity
+  - `clawck alerts list|add|remove|check` commands
+  - Configurable idle detection during business hours
+  - Overwork alerts when agent runtime exceeds threshold
+  - Webhook integration for notifications
+  - API: `GET /api/alerts`, `POST /api/alerts/check`
+- **Natural Language Queries** — `clawck ask <question>` command
+  - Time on project/client queries
+  - Busiest day/project/category queries
+  - Task count, agent work, project comparison
+  - Cost tracking queries
+  - Top agent queries
+  - Pure regex parsing (no LLM required)
+  - API: `POST /api/ask`
+- **Audit Trail** — complete change tracking
+  - `clawck audit <entry_id>` shows history for specific entry
+  - `clawck audit --recent` shows recent activity
+  - Tracks create, update, delete, approve, reject actions
+  - Records old/new values, actor, field changes
+  - Schema migration 7: `audit_log` table
+  - API: `GET /api/audit/:entry_id`, `GET /api/audit?days=N`
+- **White-Label Reports** — customizable branding for reports
+  - `--company`, `--logo`, `--primary-color`, `--footer`, `--hide-branding` options
+  - PDF and HTML report branding support
+  - Custom CSS injection for HTML reports
+  - Company logo support (file path or base64)
+
+### Changed
+- Schema version: 7 (added audit_log table)
+- APP_VERSION: 0.5.8
+
+### Tests
+- 447 passing tests
+
 ## [0.5.7] - 2026-03-11
 
 ### Added

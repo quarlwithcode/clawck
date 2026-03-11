@@ -1,4 +1,4 @@
-# Clawck v0.5.7
+# Clawck v0.5.8
 
 **System of record for AI agent work.**
 
@@ -6,22 +6,22 @@ Clawck tracks what AI agents do, how long it takes, and what it costs — then c
 
 Every service business runs on timesheets. AI agent businesses will too.
 
-## What's New in 0.5.7
+## What's New in 0.5.8
+
+- **Live Agent Status** — `clawck status --live` for real-time monitoring with auto-refresh
+- **Invoice PDFs** — `clawck invoice <client>` generates professional invoices with line items
+- **Idle & Overwork Alerts** — `clawck alerts` for monitoring agent activity and webhook notifications
+- **Natural Language Queries** — `clawck ask "How much time on project X?"` (no LLM needed)
+- **Audit Trail** — `clawck audit` shows complete change history for all entries
+- **White-Label Reports** — `--company`, `--logo`, `--primary-color` for branded output
+
+### Previous (0.5.7)
 
 - **Client-Scoped Timesheets** — `clawck timesheet <client>` for invoice-ready reports
 - **Privacy Reports** — `--redact` and `--summary-only` flags for client-facing output
 - **Platform Formatters** — `--format discord|slack|telegram|markdown` output
 - **Edit Approval Flow** — `clawck edits` for pending changes requiring review
 - **Channel Auto-Categorization** — `clawck channel` maps chat channels to projects/clients
-
-### Previous (0.5.6)
-
-- **Productivity Scoring** — `clawck score` for daily utilization and trends
-- **Category Trends** — `clawck trends` for weekly work distribution analysis
-- **Backup/Restore** — `clawck backup` and `clawck restore` for data portability
-- **Config Profiles** — `clawck profile` for managing multiple client/project configs
-- **Daily/Weekly Digests** — `clawck digest` for quick summary reports
-- **Social Share Cards** — `clawck share` generates shareable HTML cards
 
 See [CHANGELOG.md](CHANGELOG.md) for full details.
 
@@ -61,6 +61,12 @@ clawck report --format html
 - **Time tracking** - Start/stop timers or log completed tasks retroactively
 - **Human-equivalent calculations** - Configurable multipliers estimate how long a human would take
 - **Client timesheets** - `clawck timesheet <client>` for invoice-ready reports with privacy options
+- **Invoice PDFs** - `clawck invoice <client>` generates professional invoices with line items and totals
+- **Live status** - `clawck status --live` for real-time monitoring of running agents
+- **Natural language queries** - `clawck ask "How much time on project X?"` (pure regex, no LLM)
+- **Idle & overwork alerts** - `clawck alerts` for monitoring with webhook notifications
+- **Audit trail** - `clawck audit` shows complete change history for all entries
+- **White-label reports** - Custom branding with `--company`, `--logo`, `--primary-color` options
 - **Tracking patterns** - Reusable task templates (code-review, research, testing, etc.)
 - **Approval workflow** - Mark entries as approved for billing/invoicing
 - **Edit approval flow** - Queue changes for review with `--needs-approval`
