@@ -3154,6 +3154,126 @@ program
     clawck.close();
   });
 
+// ─── Audit Trail ─────────────────────────────────────────────
+
+program
+  .command('audit [entry_id]')
+  .description('View audit history for entries')
+  .option('-d, --dir <path>', 'Data directory')
+  .option('--recent', 'Show recent audit activity (last 7 days)')
+  .option('--days <n>', 'Number of days to show for recent activity', '7')
+  .option('--limit <n>', 'Limit number of records', '50')
+  .action(async (entryId, opts) => {
+    const config = loadConfig(resolveDataDir(opts));
+    const clawck = await new Clawck(config).ready();
+
+    const limit = parseInt(opts.limit) || 50;
+
+    if (opts.recent || !entryId) {
+      // Show recent audit activity
+      const days = parseInt(opts.days) || 7;
+      const audits = clawck.database.getRecentAudit(days, limit);
+
+      if (program.opts().json) {
+        console.log(JSON.stringify(audits));
+        clawck.close();
+        return;
+      }
+
+      console.log(`\n  📋 Audit Trail — Last ${days} Day(s)\n`);
+
+      if (audits.length === 0) {
+        console.log('  No audit records found.\n');
+        clawck.close();
+        return;
+      }
+
+      // Group by entry_id for better display
+      console.log('  ┌──────────────────────────────────────────────────────────────────────────────┐');
+      console.log('  │ Timestamp            │ Entry ID      │ Action      │ Actor      │ Field     │');
+      console.log('  ├──────────────────────────────────────────────────────────────────────────────┤');
+
+      for (const audit of audits) {
+        const ts = audit.timestamp.slice(0, 16).replace('T', ' ');
+        const entryShort = audit.entry_id.slice(0, 12);
+        const action = audit.action.padEnd(11);
+        const actor = (audit.actor || 'system').slice(0, 10).padEnd(10);
+        const field = (audit.field || '-').slice(0, 9).padEnd(9);
+        console.log(`  │ ${ts} │ ${entryShort}… │ ${action} │ ${actor} │ ${field} │`);
+      }
+
+      console.log('  └──────────────────────────────────────────────────────────────────────────────┘');
+      console.log(`\n  Showing ${audits.length} record(s)\n`);
+    } else {
+      // Show audit for specific entry
+      // Resolve partial ID
+      const matches = clawck.database.findByPrefix(entryId);
+      if (matches.length === 0) {
+        console.error(`  Entry not found: ${entryId}`);
+        clawck.close();
+        process.exit(1);
+      }
+      if (matches.length > 1) {
+        console.error(`  Multiple entries match prefix "${entryId}":`);
+        for (const m of matches.slice(0, 5)) {
+          console.error(`    ${m.id}`);
+        }
+        clawck.close();
+        process.exit(1);
+      }
+
+      const entry = matches[0];
+      const audits = clawck.database.getAuditByEntryId(entry.id);
+
+      if (program.opts().json) {
+        console.log(JSON.stringify({ entry, audits }));
+        clawck.close();
+        return;
+      }
+
+      console.log(`\n  📋 Audit Trail — Entry ${entry.id.slice(0, 12)}…\n`);
+      console.log(`  Task: ${entry.task}`);
+      console.log(`  Project: ${entry.project} / Client: ${entry.client}`);
+      console.log(`  Agent: ${entry.agent}`);
+      console.log(`\n  History:`);
+
+      if (audits.length === 0) {
+        console.log('  (No audit records for this entry)\n');
+        clawck.close();
+        return;
+      }
+
+      for (const audit of audits) {
+        const ts = audit.timestamp.slice(0, 19).replace('T', ' ');
+        const actor = audit.actor || 'system';
+        console.log(`\n  • ${ts} — ${audit.action.toUpperCase()} by ${actor}`);
+        if (audit.field) {
+          console.log(`    Field(s): ${audit.field}`);
+        }
+        if (audit.old_value) {
+          try {
+            const old = JSON.parse(audit.old_value);
+            console.log(`    Old: ${JSON.stringify(old)}`);
+          } catch {
+            console.log(`    Old: ${audit.old_value}`);
+          }
+        }
+        if (audit.new_value) {
+          try {
+            const newVal = JSON.parse(audit.new_value);
+            console.log(`    New: ${JSON.stringify(newVal)}`);
+          } catch {
+            console.log(`    New: ${audit.new_value}`);
+          }
+        }
+      }
+
+      console.log(`\n  Total: ${audits.length} record(s)\n`);
+    }
+
+    clawck.close();
+  });
+
 function loadConfig(dir: string): ClawckConfig {
   const dataDir = path.resolve(dir);
   const defaultConfigPath = path.join(dataDir, 'config.json');

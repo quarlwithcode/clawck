@@ -653,6 +653,30 @@ export async function createServer(config: Partial<ClawckConfig> = {}): Promise<
     res.json({ states });
   });
 
+  // ─── Audit Trail ────────────────────────────────────────
+
+  app.get('/api/audit/:entry_id', (req, res) => {
+    const entryId = req.params.entry_id;
+    // Support partial ID matching
+    const matches = clawck.database.findByPrefix(entryId);
+    if (matches.length === 0) {
+      return res.status(404).json({ error: 'Entry not found' });
+    }
+    if (matches.length > 1) {
+      return res.status(400).json({ error: 'Multiple entries match prefix', matches: matches.slice(0, 5).map(m => m.id) });
+    }
+    const entry = matches[0];
+    const audits = clawck.database.getAuditByEntryId(entry.id);
+    res.json({ entry, audits });
+  });
+
+  app.get('/api/audit', (req, res) => {
+    const days = safeInt(req.query.days as string, 7);
+    const limit = safeInt(req.query.limit as string, 100);
+    const audits = clawck.database.getRecentAudit(days, limit);
+    res.json({ audits, days, limit });
+  });
+
   // ─── Error Handler ──────────────────────────────────────
   app.use((err: any, _req: express.Request, res: express.Response, next: express.NextFunction) => {
     if (res.headersSent) return next(err);

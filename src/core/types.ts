@@ -402,7 +402,7 @@ export interface ClawckLogInput {
 // ─── Defaults ────────────────────────────────────────────
 
 export const SPEC_VERSION = '0.2.0';
-export const APP_VERSION = '0.5.7';
+export const APP_VERSION = '0.5.8';
 
 /**
  * Default human-equivalent multipliers.
@@ -562,6 +562,39 @@ export interface PendingEditEntry {
 
   /** Proposed changes */
   pending: PendingEdit;
+}
+
+// ─── Audit Trail ──────────────────────────────────────────
+
+export type AuditAction = 'create' | 'update' | 'approve' | 'delete' | 'reject_edit' | 'apply_edit';
+
+export interface AuditEntry {
+  /** Unique audit log ID (UUID) */
+  id: string;
+
+  /** The entry ID this audit log relates to */
+  entry_id: string;
+
+  /** What action was performed */
+  action: AuditAction;
+
+  /** Who performed the action (agent name, user, or 'system') */
+  actor: string;
+
+  /** Previous value (JSON stringified for complex fields) */
+  old_value?: string;
+
+  /** New value (JSON stringified for complex fields) */
+  new_value?: string;
+
+  /** Which field was changed (null for create/delete actions) */
+  field?: string;
+
+  /** ISO 8601 timestamp of the action */
+  timestamp: string;
+
+  /** Optional metadata (e.g., reason for change) */
+  metadata?: Record<string, any>;
 }
 
 // ─── Channel Mappings ─────────────────────────────────────

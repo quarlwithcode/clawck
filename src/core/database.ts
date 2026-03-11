@@ -5,7 +5,7 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
-import { ClawckEntry, TimesheetSummary, TimesheetRow, ClawckConfig, DEFAULT_HUMAN_EQUIVALENTS, ClientSummary, ProjectSummary, CategorySummary, SyncState, TaskCategory, StoredReport, ReportMetadata, ReportPeriod, ReportStyle, ReportFormat, PendingEdit, PendingEditEntry, ChannelMapping } from './types';
+import { ClawckEntry, TimesheetSummary, TimesheetRow, ClawckConfig, DEFAULT_HUMAN_EQUIVALENTS, ClientSummary, ProjectSummary, CategorySummary, SyncState, TaskCategory, StoredReport, ReportMetadata, ReportPeriod, ReportStyle, ReportFormat, PendingEdit, PendingEditEntry, ChannelMapping, AuditEntry, AuditAction } from './types';
 import { PersonalBaseline } from './personal';
 import { computeMergedRuntimeMs } from './runtime';
 
@@ -33,7 +33,7 @@ export class ClawckDB {
   // columns and start from the right version.
 
   /** Current schema version — bump when adding a new migration. */
-  static readonly SCHEMA_VERSION = 6;
+  static readonly SCHEMA_VERSION = 7;
 
   private static readonly MIGRATIONS: Array<(db: Database.Database) => void> = [
     // ── Migration 1: initial schema (entries + sync_state + indexes) ──
@@ -124,6 +124,23 @@ export class ClawckDB {
       )`);
       db.exec(`CREATE INDEX IF NOT EXISTS idx_channel_mappings_channel_id ON channel_mappings(channel_id)`);
     },
+
+    // ── Migration 7: audit_log table ──
+    (db) => {
+      db.exec(`CREATE TABLE IF NOT EXISTS audit_log (
+        id TEXT PRIMARY KEY,
+        entry_id TEXT NOT NULL,
+        action TEXT NOT NULL,
+        actor TEXT NOT NULL DEFAULT 'system',
+        old_value TEXT,
+        new_value TEXT,
+        field TEXT,
+        timestamp TEXT NOT NULL DEFAULT (datetime('now')),
+        metadata TEXT
+      )`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_audit_log_entry_id ON audit_log(entry_id)`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_audit_log_timestamp ON audit_log(timestamp)`);
+    },
   ];
 
   private migrate(): void {
@@ -185,6 +202,7 @@ export class ClawckDB {
    */
   private detectLegacyVersion(): number {
     // Walk backwards from the latest migration to find the highest already-applied one
+    if (this.tableExists('audit_log')) return 7;
     if (this.tableExists('channel_mappings')) return 6;
     if (this.tableExists('reports')) return 5;
     if (this.tableExists('personal_baselines')) return 4;
@@ -201,38 +219,55 @@ export class ClawckDB {
 
   async ensureReady(): Promise<void> { /* better-sqlite3 is synchronous */ }
 
-  insert(entry: ClawckEntry): ClawckEntry {
+  insert(entry: ClawckEntry, actor: string = 'system'): ClawckEntry {
     this.db.prepare(
       `INSERT INTO entries (id, agent, model, client, project, task, category, start, end_, status, tokens_in, tokens_out, cost_usd, tool_calls, summary, tags, source, spec_version, approved, agent_runtime_ms, wall_clock_ms) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
     ).run(entry.id, entry.agent, entry.model, entry.client, entry.project, entry.task, entry.category, entry.start, entry.end, entry.status, entry.tokens_in, entry.tokens_out, entry.cost_usd, entry.tool_calls, entry.summary, JSON.stringify(entry.tags), entry.source, entry.spec_version, entry.approved ? 1 : 0, entry.agent_runtime_ms ?? null, entry.wall_clock_ms ?? null);
+    // Log audit entry for creation
+    this.logAudit(entry.id, 'create', actor, {
+      newValue: { task: entry.task, project: entry.project, client: entry.client, agent: entry.agent },
+    });
     return entry;
   }
 
-  update(id: string, updates: Partial<ClawckEntry>): ClawckEntry | null {
+  update(id: string, updates: Partial<ClawckEntry>, actor: string = 'system'): ClawckEntry | null {
     const existing = this.getById(id);
     if (!existing) return null;
     const fields: string[] = [];
     const values: any[] = [];
-    if (updates.end !== undefined) { fields.push('end_ = ?'); values.push(updates.end); }
-    if (updates.status !== undefined) { fields.push('status = ?'); values.push(updates.status); }
-    if (updates.tokens_in !== undefined) { fields.push('tokens_in = ?'); values.push(updates.tokens_in); }
-    if (updates.tokens_out !== undefined) { fields.push('tokens_out = ?'); values.push(updates.tokens_out); }
-    if (updates.cost_usd !== undefined) { fields.push('cost_usd = ?'); values.push(updates.cost_usd); }
-    if (updates.tool_calls !== undefined) { fields.push('tool_calls = ?'); values.push(updates.tool_calls); }
-    if (updates.summary !== undefined) { fields.push('summary = ?'); values.push(updates.summary); }
-    if (updates.tags !== undefined) { fields.push('tags = ?'); values.push(JSON.stringify(updates.tags)); }
-    if (updates.project !== undefined) { fields.push('project = ?'); values.push(updates.project); }
-    if (updates.client !== undefined) { fields.push('client = ?'); values.push(updates.client); }
-    if (updates.category !== undefined) { fields.push('category = ?'); values.push(updates.category); }
-    if (updates.task !== undefined) { fields.push('task = ?'); values.push(updates.task); }
-    if (updates.agent !== undefined) { fields.push('agent = ?'); values.push(updates.agent); }
-    if (updates.approved !== undefined) { fields.push('approved = ?'); values.push(updates.approved ? 1 : 0); }
-    if (updates.agent_runtime_ms !== undefined) { fields.push('agent_runtime_ms = ?'); values.push(updates.agent_runtime_ms); }
-    if (updates.wall_clock_ms !== undefined) { fields.push('wall_clock_ms = ?'); values.push(updates.wall_clock_ms); }
+    const changedFields: string[] = [];
+    if (updates.end !== undefined) { fields.push('end_ = ?'); values.push(updates.end); changedFields.push('end'); }
+    if (updates.status !== undefined) { fields.push('status = ?'); values.push(updates.status); changedFields.push('status'); }
+    if (updates.tokens_in !== undefined) { fields.push('tokens_in = ?'); values.push(updates.tokens_in); changedFields.push('tokens_in'); }
+    if (updates.tokens_out !== undefined) { fields.push('tokens_out = ?'); values.push(updates.tokens_out); changedFields.push('tokens_out'); }
+    if (updates.cost_usd !== undefined) { fields.push('cost_usd = ?'); values.push(updates.cost_usd); changedFields.push('cost_usd'); }
+    if (updates.tool_calls !== undefined) { fields.push('tool_calls = ?'); values.push(updates.tool_calls); changedFields.push('tool_calls'); }
+    if (updates.summary !== undefined) { fields.push('summary = ?'); values.push(updates.summary); changedFields.push('summary'); }
+    if (updates.tags !== undefined) { fields.push('tags = ?'); values.push(JSON.stringify(updates.tags)); changedFields.push('tags'); }
+    if (updates.project !== undefined) { fields.push('project = ?'); values.push(updates.project); changedFields.push('project'); }
+    if (updates.client !== undefined) { fields.push('client = ?'); values.push(updates.client); changedFields.push('client'); }
+    if (updates.category !== undefined) { fields.push('category = ?'); values.push(updates.category); changedFields.push('category'); }
+    if (updates.task !== undefined) { fields.push('task = ?'); values.push(updates.task); changedFields.push('task'); }
+    if (updates.agent !== undefined) { fields.push('agent = ?'); values.push(updates.agent); changedFields.push('agent'); }
+    if (updates.approved !== undefined) { fields.push('approved = ?'); values.push(updates.approved ? 1 : 0); changedFields.push('approved'); }
+    if (updates.agent_runtime_ms !== undefined) { fields.push('agent_runtime_ms = ?'); values.push(updates.agent_runtime_ms); changedFields.push('agent_runtime_ms'); }
+    if (updates.wall_clock_ms !== undefined) { fields.push('wall_clock_ms = ?'); values.push(updates.wall_clock_ms); changedFields.push('wall_clock_ms'); }
     fields.push("updated_at = datetime('now')");
     if (fields.length === 1) return existing;
     values.push(id);
     this.db.prepare(`UPDATE entries SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+    // Log audit entry for updates
+    const oldValues: Record<string, any> = {};
+    const newValues: Record<string, any> = {};
+    for (const field of changedFields) {
+      oldValues[field] = (existing as any)[field];
+      newValues[field] = (updates as any)[field];
+    }
+    this.logAudit(id, 'update', actor, {
+      oldValue: oldValues,
+      newValue: newValues,
+      field: changedFields.join(','),
+    });
     return this.getById(id);
   }
 
@@ -241,8 +276,14 @@ export class ClawckDB {
     return row ? this.rowToEntry(row) : null;
   }
 
-  deleteById(id: string): boolean {
+  deleteById(id: string, actor: string = 'system'): boolean {
+    const existing = this.getById(id);
     const result = this.db.prepare('DELETE FROM entries WHERE id = ?').run(id);
+    if (result.changes > 0 && existing) {
+      this.logAudit(id, 'delete', actor, {
+        oldValue: { task: existing.task, project: existing.project, client: existing.client },
+      });
+    }
     return result.changes > 0;
   }
 
@@ -523,20 +564,32 @@ export class ClawckDB {
     }));
   }
 
-  approvePendingEdit(entryId: string): ClawckEntry | null {
+  approvePendingEdit(entryId: string, actor: string = 'system'): ClawckEntry | null {
     const existing = this.getById(entryId);
     if (!existing || !existing.edit_pending) return null;
     const pending = existing.pending_edits;
     if (!pending) return null;
     // Apply the pending changes
     const updates: Partial<ClawckEntry> = pending.changes;
-    const entry = this.update(entryId, updates);
+    const entry = this.update(entryId, updates, actor);
     if (!entry) return null;
+    // Log apply_edit audit
+    this.logAudit(entryId, 'apply_edit', actor, {
+      oldValue: pending.changes,
+      metadata: { requested_by: pending.requested_by, reason: pending.reason },
+    });
     // Clear the pending edit flag
     return this.clearPendingEdit(entryId);
   }
 
-  rejectPendingEdit(entryId: string): ClawckEntry | null {
+  rejectPendingEdit(entryId: string, actor: string = 'system'): ClawckEntry | null {
+    const existing = this.getById(entryId);
+    if (existing?.pending_edits) {
+      this.logAudit(entryId, 'reject_edit', actor, {
+        oldValue: existing.pending_edits.changes,
+        metadata: { requested_by: existing.pending_edits.requested_by },
+      });
+    }
     return this.clearPendingEdit(entryId);
   }
 
@@ -596,6 +649,81 @@ export class ClawckDB {
       default_category: row.default_category as TaskCategory || undefined,
       created_at: row.created_at,
       updated_at: row.updated_at,
+    };
+  }
+
+  // ─── Audit Log ─────────────────────────────────────────
+
+  insertAudit(audit: AuditEntry): AuditEntry {
+    this.db.prepare(
+      `INSERT INTO audit_log (id, entry_id, action, actor, old_value, new_value, field, timestamp, metadata) VALUES (?,?,?,?,?,?,?,?,?)`
+    ).run(
+      audit.id,
+      audit.entry_id,
+      audit.action,
+      audit.actor,
+      audit.old_value || null,
+      audit.new_value || null,
+      audit.field || null,
+      audit.timestamp,
+      audit.metadata ? JSON.stringify(audit.metadata) : null
+    );
+    return audit;
+  }
+
+  logAudit(entryId: string, action: AuditAction, actor: string, options?: {
+    oldValue?: any;
+    newValue?: any;
+    field?: string;
+    metadata?: Record<string, any>;
+  }): AuditEntry {
+    const audit: AuditEntry = {
+      id: crypto.randomUUID(),
+      entry_id: entryId,
+      action,
+      actor,
+      old_value: options?.oldValue !== undefined ? JSON.stringify(options.oldValue) : undefined,
+      new_value: options?.newValue !== undefined ? JSON.stringify(options.newValue) : undefined,
+      field: options?.field,
+      timestamp: new Date().toISOString(),
+      metadata: options?.metadata,
+    };
+    return this.insertAudit(audit);
+  }
+
+  getAuditByEntryId(entryId: string): AuditEntry[] {
+    const rows = this.db.prepare(
+      'SELECT * FROM audit_log WHERE entry_id = ? ORDER BY timestamp DESC'
+    ).all(entryId) as any[];
+    return rows.map(r => this.rowToAudit(r));
+  }
+
+  getRecentAudit(days: number = 7, limit: number = 100): AuditEntry[] {
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+    const rows = this.db.prepare(
+      'SELECT * FROM audit_log WHERE timestamp >= ? ORDER BY timestamp DESC LIMIT ?'
+    ).all(since, limit) as any[];
+    return rows.map(r => this.rowToAudit(r));
+  }
+
+  getAuditByAction(action: AuditAction, limit: number = 100): AuditEntry[] {
+    const rows = this.db.prepare(
+      'SELECT * FROM audit_log WHERE action = ? ORDER BY timestamp DESC LIMIT ?'
+    ).all(action, limit) as any[];
+    return rows.map(r => this.rowToAudit(r));
+  }
+
+  private rowToAudit(row: any): AuditEntry {
+    return {
+      id: row.id,
+      entry_id: row.entry_id,
+      action: row.action as AuditAction,
+      actor: row.actor,
+      old_value: row.old_value || undefined,
+      new_value: row.new_value || undefined,
+      field: row.field || undefined,
+      timestamp: row.timestamp,
+      metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
     };
   }
 
