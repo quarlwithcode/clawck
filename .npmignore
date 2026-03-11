@@ -1,0 +1,22 @@
+# Source & tests
+src/
+test/
+vitest.config.ts
+tsconfig.json
+eslint.config.js
+
+# Data & state
+.clawck/
+*.db
+*.jsonl
+
+# Dev files
+.git/
+.github/
+.vscode/
+*.tgz
+coverage/
+node_modules/
+
+# Docs snippets (included via dist)
+docs/snippets/

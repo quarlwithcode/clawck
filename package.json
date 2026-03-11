@@ -1,7 +1,7 @@
 {
   "name": "clawck",
   "version": "0.5.8",
-  "description": "⏱️🦀 System of record for AI agent work.",
+  "description": "\u23f1\ufe0f\ud83e\udd80 System of record for AI agent work.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
@@ -68,5 +68,15 @@
     "docs/",
     "README.md",
     "LICENSE"
-  ]
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  }
 }
