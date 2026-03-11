@@ -124,35 +124,67 @@ program
   .command('status')
   .description('Show currently running tasks and stats')
   .option('-d, --dir <path>', 'Data directory')
+  .option('--live', 'Live refresh every 2 seconds')
   .action(async (opts) => {
     const config = loadConfig(resolveDataDir(opts));
     const clawck = await new Clawck(config).ready();
-    const stats = clawck.stats();
-    const running = clawck.running();
 
-    if (program.opts().json) {
-      console.log(JSON.stringify({ stats, running }));
-      clawck.close();
-      return;
-    }
+    const printStatus = () => {
+      const stats = clawck.stats();
+      const running = clawck.running();
 
-    console.log(`\n  ⏱️🦀 Clawck Status`);
-    console.log(`  ├─ Total entries:  ${stats.total_entries}`);
-    console.log(`  ├─ Running now:    ${stats.running}`);
-    console.log(`  ├─ Clients:        ${stats.clients}`);
-    console.log(`  ├─ Projects:       ${stats.projects}`);
-    console.log(`  └─ Agents:         ${stats.agents}`);
-
-    if (running.length > 0) {
-      console.log(`\n  ⏱️ Running Tasks:`);
-      for (const e of running) {
-        const mins = Math.round((Date.now() - new Date(e.start).getTime()) / 60000);
-        console.log(`  ├─ ${e.task}`);
-        console.log(`  │  ${e.agent} → ${e.project}/${e.client} (${mins}m)`);
+      if (program.opts().json) {
+        console.log(JSON.stringify({ stats, running }));
+        return { stats, running };
       }
+
+      console.log(`\n  ⏱️🦀 Clawck Status`);
+      console.log(`  ├─ Total entries:  ${stats.total_entries}`);
+      console.log(`  ├─ Running now:    ${stats.running}`);
+      console.log(`  ├─ Clients:        ${stats.clients}`);
+      console.log(`  ├─ Projects:       ${stats.projects}`);
+      console.log(`  └─ Agents:         ${stats.agents}`);
+
+      if (running.length > 0) {
+        console.log(`\n  ⏱️ Active Agents:`);
+        console.log(`  ${'Agent'.padEnd(20)} ${'Task'.padEnd(35)} ${'Runtime'.padEnd(10)} Model`);
+        console.log(`  ${'─'.repeat(75)}`);
+        for (const e of running) {
+          const mins = Math.round((Date.now() - new Date(e.start).getTime()) / 60000);
+          const taskTrunc = e.task.length > 33 ? e.task.slice(0, 30) + '...' : e.task;
+          console.log(`  ${e.agent.padEnd(20)} ${taskTrunc.padEnd(35)} ${formatDuration(mins).padEnd(10)} ${e.model}`);
+        }
+      } else {
+        console.log(`\n  No active tasks.`);
+      }
+      console.log('');
+      return { stats, running };
+    };
+
+    if (opts.live) {
+      // Live mode: clear and refresh every 2 seconds
+      const clearScreen = () => process.stdout.write('\x1B[2J\x1B[0;0H');
+
+      const refresh = () => {
+        clearScreen();
+        console.log(`  [Live mode - refreshing every 2s. Press Ctrl+C to exit]\n`);
+        printStatus();
+      };
+
+      refresh();
+      const interval = setInterval(refresh, 2000);
+
+      // Handle Ctrl+C gracefully
+      process.on('SIGINT', () => {
+        clearInterval(interval);
+        clawck.close();
+        console.log('\n  Live mode stopped.\n');
+        process.exit(0);
+      });
+    } else {
+      printStatus();
+      clawck.close();
     }
-    console.log('');
-    clawck.close();
   });
 
 // ─── Score ────────────────────────────────────────────────

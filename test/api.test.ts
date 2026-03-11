@@ -169,6 +169,36 @@ describe('GET /api/stats', () => {
   });
 });
 
+// ─── Agent Status ────────────────────────────────────────
+
+describe('GET /api/agents/status', () => {
+  it('returns active agents with runtime info', async () => {
+    await setup();
+    await request(app).post('/api/start').send({ task: 'task1', agent: 'agent-alpha', model: 'claude-sonnet' });
+    await request(app).post('/api/start').send({ task: 'task2', agent: 'agent-beta', model: 'claude-opus' });
+    await request(app).post('/api/log').send({ task: 'completed', duration_minutes: 10 });
+
+    const res = await request(app).get('/api/agents/status').expect(200);
+    expect(res.body.active_count).toBe(2);
+    expect(res.body.agents).toHaveLength(2);
+    expect(res.body.agents[0]).toHaveProperty('agent');
+    expect(res.body.agents[0]).toHaveProperty('model');
+    expect(res.body.agents[0]).toHaveProperty('task');
+    expect(res.body.agents[0]).toHaveProperty('runtime_ms');
+    expect(res.body.agents[0]).toHaveProperty('runtime_minutes');
+    expect(res.body.timestamp).toBeTruthy();
+  });
+
+  it('returns empty array when no active agents', async () => {
+    await setup();
+    await request(app).post('/api/log').send({ task: 'completed', duration_minutes: 10 });
+
+    const res = await request(app).get('/api/agents/status').expect(200);
+    expect(res.body.active_count).toBe(0);
+    expect(res.body.agents).toHaveLength(0);
+  });
+});
+
 // ─── Timesheet ────────────────────────────────────────────
 
 describe('GET /api/timesheet', () => {

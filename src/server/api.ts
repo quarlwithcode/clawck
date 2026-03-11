@@ -255,6 +255,28 @@ export async function createServer(config: Partial<ClawckConfig> = {}): Promise<
     res.json(clawck.running());
   });
 
+  // ─── Active Agent Status ────────────────────────────────
+
+  app.get('/api/agents/status', (_req, res) => {
+    const running = clawck.running();
+    const agents = running.map(e => ({
+      agent: e.agent,
+      model: e.model,
+      task: e.task,
+      project: e.project,
+      client: e.client,
+      start: e.start,
+      runtime_ms: Date.now() - new Date(e.start).getTime(),
+      runtime_minutes: Math.round((Date.now() - new Date(e.start).getTime()) / 60000),
+      entry_id: e.id,
+    }));
+    res.json({
+      active_count: agents.length,
+      agents,
+      timestamp: new Date().toISOString(),
+    });
+  });
+
   // ─── Productivity Score ─────────────────────────────────
 
   app.get('/api/score', (req, res) => {
