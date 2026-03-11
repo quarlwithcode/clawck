@@ -614,6 +614,20 @@ export async function createServer(config: Partial<ClawckConfig> = {}): Promise<
     });
   });
 
+  // ─── Natural Language Queries ─────────────────────────────
+
+  app.post('/api/ask', async (req, res) => {
+    const { processNLQ } = await import('../core/nlq');
+    const question = req.body.question;
+
+    if (!question || typeof question !== 'string') {
+      return res.status(400).json({ error: 'question is required and must be a string' });
+    }
+
+    const result = processNLQ(question, clawck.database);
+    res.json(result);
+  });
+
   // ─── Sync Status ──────────────────────────────────────
 
   // Start idle monitor if webhooks configured

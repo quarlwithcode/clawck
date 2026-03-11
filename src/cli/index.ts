@@ -3113,6 +3113,47 @@ alerts
     clawck.close();
   });
 
+// ─── Ask (Natural Language Queries) ─────────────────────────
+
+program
+  .command('ask <question...>')
+  .description('Ask natural language questions about your time data')
+  .option('-d, --dir <path>', 'Data directory')
+  .option('--help-examples', 'Show example questions')
+  .action(async (questionParts, opts) => {
+    const { processNLQ, getAskHelp } = await import('../core/nlq');
+
+    if (opts.helpExamples) {
+      console.log(getAskHelp());
+      return;
+    }
+
+    const question = questionParts.join(' ');
+    if (!question.trim()) {
+      console.log(getAskHelp());
+      return;
+    }
+
+    const config = loadConfig(resolveDataDir(opts));
+    const clawck = await new Clawck(config).ready();
+
+    const result = processNLQ(question, clawck.database);
+
+    if (program.opts().json) {
+      console.log(JSON.stringify(result));
+      clawck.close();
+      return;
+    }
+
+    if (result.understood) {
+      console.log(`\n  ${result.response}\n`);
+    } else {
+      console.log(`\n  ${result.suggestion}\n`);
+    }
+
+    clawck.close();
+  });
+
 function loadConfig(dir: string): ClawckConfig {
   const dataDir = path.resolve(dir);
   const defaultConfigPath = path.join(dataDir, 'config.json');
