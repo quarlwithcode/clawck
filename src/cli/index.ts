@@ -759,7 +759,9 @@ program
 
     clawck setup claude      Output CLAUDE.md time tracking snippet
     clawck setup mcp         Output MCP server config JSON
-    clawck setup openclaw    Output OpenClaw snippets (AGENT.md + HEARTBEAT.md)
+    clawck setup openclaw    Output OpenClaw hook config (handler.ts + hook.json)
+    clawck setup gemini      Output Gemini CLI hook config
+    clawck setup cursor      Output Cursor hook config
 
   Paste the output into the appropriate file for your agent platform.
   See docs/skills/clawck-setup.md for full integration guide.
@@ -779,10 +781,35 @@ program
         break;
       }
       case 'openclaw': {
-        console.log('\n# ─── AGENT.md ─────────────────────────────────────────\n');
+        console.log(`
+  ⏱️🦀 Clawck Setup — OpenClaw Hooks
+
+  Create directory: ~/.openclaw/hooks/clawck-auto/
+
+  Then add these two files:
+`);
+        console.log('\n# ─── ~/.openclaw/hooks/clawck-auto/hook.json ──────────\n');
+        console.log(readSnippet('openclaw-hook.json'));
+        console.log('\n# ─── ~/.openclaw/hooks/clawck-auto/handler.ts ─────────\n');
+        console.log(readSnippet('openclaw-handler.ts'));
+        console.log(`
+  Signal File Support:
+  The handler reads .agent-done files with epoch timestamps:
+  { "start_ms": 1710000000000, "end_ms": 1710000060000 }
+
+  Agent Markdown (for MCP-based tracking):
+`);
         console.log(readSnippet('openclaw-agent-md.txt'));
-        console.log('\n# ─── HEARTBEAT.md ─────────────────────────────────────\n');
-        console.log(readSnippet('openclaw-heartbeat-md.txt'));
+        break;
+      }
+      case 'gemini': {
+        console.log('\n# Add this to your ~/.gemini/settings.json:\n');
+        console.log(readSnippet('hooks-gemini.json'));
+        break;
+      }
+      case 'cursor': {
+        console.log('\n# Add this to your .cursor/hooks.json:\n');
+        console.log(readSnippet('hooks-cursor.json'));
         break;
       }
       default:

@@ -1,0 +1,28 @@
+{
+  "name": "clawck-auto",
+  "description": "Automatic time tracking with Clawck",
+  "enabled": true,
+  "events": {
+    "agent_start": {
+      "handler": "handler.ts",
+      "function": "handle"
+    },
+    "agent_stop": {
+      "handler": "handler.ts",
+      "function": "handle"
+    },
+    "turn_start": {
+      "handler": "handler.ts",
+      "function": "handle"
+    },
+    "turn_stop": {
+      "handler": "handler.ts",
+      "function": "handle"
+    }
+  },
+  "config": {
+    "track_turns": true,
+    "track_sessions": true,
+    "signal_file": ".agent-done"
+  }
+}
