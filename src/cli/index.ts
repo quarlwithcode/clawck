@@ -832,6 +832,260 @@ pattern
     console.log(`  Default pattern set to: ${name}`);
   });
 
+// ─── Config Profiles ─────────────────────────────────────
+
+const profile = program
+  .command('profile')
+  .description('Manage configuration profiles (presets for different clients/projects)');
+
+profile
+  .command('list')
+  .description('List all config profiles')
+  .option('-d, --dir <path>', 'Data directory')
+  .action(async (opts) => {
+    const dataDir = path.resolve(resolveDataDir(opts));
+    const profilesDir = path.join(dataDir, 'profiles');
+    const activeProfilePath = path.join(dataDir, '.active-profile');
+
+    // Get active profile
+    let activeProfile = 'default';
+    if (fs.existsSync(activeProfilePath)) {
+      activeProfile = fs.readFileSync(activeProfilePath, 'utf-8').trim();
+    }
+
+    // List profiles
+    const profiles: { name: string; active: boolean; client?: string; project?: string }[] = [];
+
+    // Default profile (main config.json)
+    const defaultConfig = path.join(dataDir, 'config.json');
+    if (fs.existsSync(defaultConfig)) {
+      try {
+        const cfg = JSON.parse(fs.readFileSync(defaultConfig, 'utf-8'));
+        profiles.push({
+          name: 'default',
+          active: activeProfile === 'default',
+          client: cfg.default_client,
+          project: cfg.default_project,
+        });
+      } catch {
+        profiles.push({ name: 'default', active: activeProfile === 'default' });
+      }
+    }
+
+    // Named profiles
+    if (fs.existsSync(profilesDir)) {
+      for (const file of fs.readdirSync(profilesDir)) {
+        if (file.endsWith('.json')) {
+          const name = file.replace('.json', '');
+          try {
+            const cfg = JSON.parse(fs.readFileSync(path.join(profilesDir, file), 'utf-8'));
+            profiles.push({
+              name,
+              active: activeProfile === name,
+              client: cfg.default_client,
+              project: cfg.default_project,
+            });
+          } catch {
+            profiles.push({ name, active: activeProfile === name });
+          }
+        }
+      }
+    }
+
+    if (program.opts().json) {
+      console.log(JSON.stringify(profiles));
+      return;
+    }
+
+    console.log(`\n  Config Profiles:`);
+    console.log(`  ${'─'.repeat(50)}`);
+    for (const p of profiles) {
+      const activeMark = p.active ? ' (active)' : '';
+      const details: string[] = [];
+      if (p.client) details.push(`client: ${p.client}`);
+      if (p.project) details.push(`project: ${p.project}`);
+      const detailsStr = details.length > 0 ? ` — ${details.join(', ')}` : '';
+      console.log(`  ${p.active ? '●' : '○'} ${p.name}${activeMark}${detailsStr}`);
+    }
+    console.log('');
+  });
+
+profile
+  .command('create <name>')
+  .description('Create a new config profile')
+  .option('-d, --dir <path>', 'Data directory')
+  .option('--client <name>', 'Default client for this profile')
+  .option('--project <name>', 'Default project for this profile')
+  .option('--agent <name>', 'Default agent for this profile')
+  .option('--model <name>', 'Default model for this profile')
+  .option('--copy-from <profile>', 'Copy settings from another profile')
+  .action(async (name, opts) => {
+    const dataDir = path.resolve(resolveDataDir(opts));
+    const profilesDir = path.join(dataDir, 'profiles');
+    const profilePath = path.join(profilesDir, `${name}.json`);
+
+    if (name === 'default') {
+      console.error('  Cannot create a profile named "default". Edit config.json directly.');
+      process.exit(1);
+    }
+
+    // Create profiles directory if needed
+    if (!fs.existsSync(profilesDir)) {
+      fs.mkdirSync(profilesDir, { recursive: true });
+    }
+
+    if (fs.existsSync(profilePath)) {
+      console.error(`  Profile "${name}" already exists. Use "clawck profile edit ${name}" or delete it first.`);
+      process.exit(1);
+    }
+
+    // Start with base config or copy from another profile
+    let baseConfig: any = {};
+    if (opts.copyFrom) {
+      const sourcePath = opts.copyFrom === 'default'
+        ? path.join(dataDir, 'config.json')
+        : path.join(profilesDir, `${opts.copyFrom}.json`);
+      if (fs.existsSync(sourcePath)) {
+        try {
+          baseConfig = JSON.parse(fs.readFileSync(sourcePath, 'utf-8'));
+        } catch {}
+      } else {
+        console.error(`  Source profile "${opts.copyFrom}" not found.`);
+        process.exit(1);
+      }
+    }
+
+    // Apply overrides
+    if (opts.client) baseConfig.default_client = opts.client;
+    if (opts.project) baseConfig.default_project = opts.project;
+    if (opts.agent) baseConfig.default_agent = opts.agent;
+    if (opts.model) baseConfig.default_model = opts.model;
+
+    fs.writeFileSync(profilePath, JSON.stringify(baseConfig, null, 2));
+
+    if (program.opts().json) {
+      console.log(JSON.stringify({ ok: true, name, path: profilePath }));
+    } else {
+      console.log(`  Created profile: ${name}`);
+      console.log(`  Path: ${profilePath}`);
+      console.log(`\n  Activate with: clawck profile use ${name}`);
+    }
+  });
+
+profile
+  .command('use <name>')
+  .description('Switch to a config profile')
+  .option('-d, --dir <path>', 'Data directory')
+  .action(async (name, opts) => {
+    const dataDir = path.resolve(resolveDataDir(opts));
+    const profilesDir = path.join(dataDir, 'profiles');
+    const activeProfilePath = path.join(dataDir, '.active-profile');
+
+    // Verify profile exists
+    if (name !== 'default') {
+      const profilePath = path.join(profilesDir, `${name}.json`);
+      if (!fs.existsSync(profilePath)) {
+        console.error(`  Profile "${name}" not found. Create it with: clawck profile create ${name}`);
+        process.exit(1);
+      }
+    }
+
+    fs.writeFileSync(activeProfilePath, name);
+
+    if (program.opts().json) {
+      console.log(JSON.stringify({ ok: true, active: name }));
+    } else {
+      console.log(`  Switched to profile: ${name}`);
+    }
+  });
+
+profile
+  .command('show [name]')
+  .description('Show a config profile\'s settings')
+  .option('-d, --dir <path>', 'Data directory')
+  .action(async (name, opts) => {
+    const dataDir = path.resolve(resolveDataDir(opts));
+    const profilesDir = path.join(dataDir, 'profiles');
+    const activeProfilePath = path.join(dataDir, '.active-profile');
+
+    // Default to active profile if none specified
+    if (!name) {
+      if (fs.existsSync(activeProfilePath)) {
+        name = fs.readFileSync(activeProfilePath, 'utf-8').trim();
+      } else {
+        name = 'default';
+      }
+    }
+
+    const profilePath = name === 'default'
+      ? path.join(dataDir, 'config.json')
+      : path.join(profilesDir, `${name}.json`);
+
+    if (!fs.existsSync(profilePath)) {
+      console.error(`  Profile "${name}" not found.`);
+      process.exit(1);
+    }
+
+    try {
+      const cfg = JSON.parse(fs.readFileSync(profilePath, 'utf-8'));
+      if (program.opts().json) {
+        console.log(JSON.stringify({ name, ...cfg }));
+      } else {
+        console.log(`\n  Profile: ${name}`);
+        console.log(`  ${'─'.repeat(40)}`);
+        console.log(`  Client:  ${cfg.default_client || '(not set)'}`);
+        console.log(`  Project: ${cfg.default_project || '(not set)'}`);
+        console.log(`  Agent:   ${cfg.default_agent || '(not set)'}`);
+        console.log(`  Model:   ${cfg.default_model || '(not set)'}`);
+        console.log(`  Port:    ${cfg.port || 3456}`);
+        if (cfg.patterns?.length) {
+          console.log(`  Patterns: ${cfg.patterns.length}`);
+        }
+        console.log('');
+      }
+    } catch {
+      console.error(`  Failed to parse profile: ${profilePath}`);
+      process.exit(1);
+    }
+  });
+
+profile
+  .command('delete <name>')
+  .description('Delete a config profile')
+  .option('-d, --dir <path>', 'Data directory')
+  .action(async (name, opts) => {
+    const dataDir = path.resolve(resolveDataDir(opts));
+    const profilesDir = path.join(dataDir, 'profiles');
+    const activeProfilePath = path.join(dataDir, '.active-profile');
+
+    if (name === 'default') {
+      console.error('  Cannot delete the default profile.');
+      process.exit(1);
+    }
+
+    const profilePath = path.join(profilesDir, `${name}.json`);
+    if (!fs.existsSync(profilePath)) {
+      console.error(`  Profile "${name}" not found.`);
+      process.exit(1);
+    }
+
+    fs.unlinkSync(profilePath);
+
+    // If this was the active profile, switch back to default
+    if (fs.existsSync(activeProfilePath)) {
+      const active = fs.readFileSync(activeProfilePath, 'utf-8').trim();
+      if (active === name) {
+        fs.writeFileSync(activeProfilePath, 'default');
+      }
+    }
+
+    if (program.opts().json) {
+      console.log(JSON.stringify({ ok: true, deleted: name }));
+    } else {
+      console.log(`  Deleted profile: ${name}`);
+    }
+  });
+
 // ─── Setup ───────────────────────────────────────────────
 
 program
@@ -1852,14 +2106,34 @@ function printEntryTable(entries: ClawckEntry[]): void {
 
 function loadConfig(dir: string): ClawckConfig {
   const dataDir = path.resolve(dir);
-  const configPath = path.join(dataDir, 'config.json');
+  const defaultConfigPath = path.join(dataDir, 'config.json');
+  const activeProfilePath = path.join(dataDir, '.active-profile');
+  const profilesDir = path.join(dataDir, 'profiles');
 
+  // Load default config first
   let fileConfig: Partial<ClawckConfig> = {};
-  if (fs.existsSync(configPath)) {
+  if (fs.existsSync(defaultConfigPath)) {
     try {
-      fileConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+      fileConfig = JSON.parse(fs.readFileSync(defaultConfigPath, 'utf-8'));
     } catch {
       // Ignore bad config
+    }
+  }
+
+  // Check for active profile and merge its settings
+  if (fs.existsSync(activeProfilePath)) {
+    const activeProfile = fs.readFileSync(activeProfilePath, 'utf-8').trim();
+    if (activeProfile && activeProfile !== 'default') {
+      const profilePath = path.join(profilesDir, `${activeProfile}.json`);
+      if (fs.existsSync(profilePath)) {
+        try {
+          const profileConfig = JSON.parse(fs.readFileSync(profilePath, 'utf-8'));
+          // Profile overrides default config (but doesn't replace nested objects entirely)
+          fileConfig = { ...fileConfig, ...profileConfig };
+        } catch {
+          // Ignore bad profile config
+        }
+      }
     }
   }
 
