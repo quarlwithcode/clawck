@@ -167,6 +167,15 @@ export async function createServer(config: Partial<ClawckConfig> = {}): Promise<
     res.json(trends);
   });
 
+  // ─── Digest ──────────────────────────────────────────────
+
+  app.get('/api/digest', (req, res) => {
+    const period = (req.query.period as 'day' | 'week') || 'day';
+    const date = req.query.date as string | undefined;
+    const digest = clawck.digest({ period, date });
+    res.json(digest);
+  });
+
   // ─── Timesheet ─────────────────────────────────────────
 
   app.get('/api/timesheet', (req, res) => {

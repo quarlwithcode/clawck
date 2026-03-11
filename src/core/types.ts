@@ -452,3 +452,50 @@ export interface CategoryTrends {
     direction: 'up' | 'down';
   } | null;
 }
+
+// ─── Digests ──────────────────────────────────────────────
+
+export type DigestPeriod = 'day' | 'week';
+
+export interface DigestHighlight {
+  type: 'top_project' | 'top_category' | 'top_agent' | 'longest_task' | 'most_tasks' | 'milestone';
+  label: string;
+  value: string;
+  metric?: number;
+}
+
+export interface Digest {
+  period: DigestPeriod;
+  period_start: string;
+  period_end: string;
+  summary: {
+    total_entries: number;
+    total_agent_hours: number;
+    total_human_equiv_hours: number;
+    total_cost_usd: number;
+    total_savings_usd: number;
+    completed: number;
+    failed: number;
+    running: number;
+  };
+  highlights: DigestHighlight[];
+  by_day?: {
+    date: string;
+    entries: number;
+    agent_hours: number;
+    top_category: TaskCategory | null;
+  }[];
+  top_tasks: {
+    task: string;
+    project: string;
+    category: TaskCategory;
+    duration_minutes: number;
+  }[];
+  comparison?: {
+    vs_previous_period: {
+      entries_delta: number;
+      hours_delta: number;
+      direction: 'up' | 'down' | 'same';
+    };
+  };
+}

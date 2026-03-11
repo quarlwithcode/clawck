@@ -253,6 +253,85 @@ program
     clawck.close();
   });
 
+// ─── Digest ──────────────────────────────────────────────
+
+program
+  .command('digest')
+  .description('Show a daily or weekly summary digest')
+  .option('-d, --dir <path>', 'Data directory')
+  .option('--period <type>', 'Digest period (day, week)', 'day')
+  .option('--date <date>', 'Specific date (YYYY-MM-DD)')
+  .action(async (opts) => {
+    const config = loadConfig(resolveDataDir(opts));
+    const clawck = await new Clawck(config).ready();
+
+    const period = (opts.period === 'week' ? 'week' : 'day') as 'day' | 'week';
+    const digest = clawck.digest({ period, date: opts.date });
+
+    if (program.opts().json) {
+      console.log(JSON.stringify(digest));
+      clawck.close();
+      return;
+    }
+
+    const periodLabel = period === 'day' ? 'Daily' : 'Weekly';
+    const dateLabel = digest.period_start.split('T')[0];
+    const endLabel = digest.period_end.split('T')[0];
+
+    console.log(`\n  ⏱️🦀 ${periodLabel} Digest — ${dateLabel}${period === 'week' ? ` to ${endLabel}` : ''}`);
+    console.log(`  ${'─'.repeat(55)}`);
+
+    // Summary
+    console.log(`  📊 Summary:`);
+    console.log(`     Entries:      ${digest.summary.total_entries} (${digest.summary.completed} completed, ${digest.summary.failed} failed, ${digest.summary.running} running)`);
+    console.log(`     Agent time:   ${digest.summary.total_agent_hours.toFixed(2)}h`);
+    console.log(`     Human equiv:  ${digest.summary.total_human_equiv_hours.toFixed(2)}h`);
+    console.log(`     Cost:         $${digest.summary.total_cost_usd.toFixed(2)}`);
+    console.log(`     Savings:      $${digest.summary.total_savings_usd.toFixed(0)}`);
+
+    // Comparison
+    if (digest.comparison) {
+      const cmp = digest.comparison.vs_previous_period;
+      const arrow = cmp.direction === 'up' ? '↑' : cmp.direction === 'down' ? '↓' : '→';
+      const entriesSign = cmp.entries_delta > 0 ? '+' : '';
+      const hoursSign = cmp.hours_delta > 0 ? '+' : '';
+      console.log(`\n  📈 vs previous ${period}:  ${arrow} ${entriesSign}${cmp.entries_delta} entries, ${hoursSign}${cmp.hours_delta.toFixed(2)}h`);
+    }
+
+    // Highlights
+    if (digest.highlights.length > 0) {
+      console.log(`\n  🏆 Highlights:`);
+      for (const h of digest.highlights) {
+        const metricStr = h.metric !== undefined ? ` (${h.metric}${h.type.includes('hours') || h.type === 'top_project' || h.type === 'top_category' || h.type === 'top_agent' ? 'h' : h.type === 'longest_task' ? 'm' : ''})` : '';
+        console.log(`     ${h.label}: ${h.value}${metricStr}`);
+      }
+    }
+
+    // Top tasks
+    if (digest.top_tasks.length > 0) {
+      console.log(`\n  📋 Top Tasks:`);
+      for (const t of digest.top_tasks.slice(0, 5)) {
+        const dur = t.duration_minutes >= 60
+          ? `${Math.floor(t.duration_minutes / 60)}h ${Math.round(t.duration_minutes % 60)}m`
+          : `${Math.round(t.duration_minutes)}m`;
+        console.log(`     • ${t.task.slice(0, 45)}${t.task.length > 45 ? '...' : ''} (${dur})`);
+      }
+    }
+
+    // Daily breakdown (for weekly)
+    if (period === 'week' && digest.by_day && digest.by_day.length > 0) {
+      console.log(`\n  📅 Daily Breakdown:`);
+      console.log(`     ${'Date'.padEnd(12)} ${'Entries'.padEnd(10)} ${'Hours'.padEnd(10)} Top Category`);
+      console.log(`     ${'─'.repeat(45)}`);
+      for (const d of digest.by_day) {
+        console.log(`     ${d.date.padEnd(12)} ${String(d.entries).padEnd(10)} ${d.agent_hours.toFixed(2).padEnd(10)} ${d.top_category || '-'}`);
+      }
+    }
+
+    console.log('');
+    clawck.close();
+  });
+
 // ─── Report ───────────────────────────────────────────────
 
 const reportCmd = program

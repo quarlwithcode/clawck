@@ -9,6 +9,7 @@ import {
   TimesheetSummary, SPEC_VERSION, DEFAULT_CONFIG, TrackingPattern, TaskCategory,
   StoredReport, ReportMetadata, ReportPeriod, ReportStyle, ReportFormat,
   ProductivityScore, DayScore, CategoryTrends, WeekTrend, CategoryTrendEntry, TASK_CATEGORIES,
+  Digest, DigestPeriod, DigestHighlight,
 } from './types';
 import { estimateCost } from './pricing';
 import { ClawckDB } from './database';
@@ -586,6 +587,252 @@ export class Clawck {
       period_end: to,
       weeks: weekTrends,
       biggest_shift: biggestShift,
+    };
+  }
+
+  // ─── Digests ────────────────────────────────────────────
+
+  digest(opts: { period?: DigestPeriod; date?: string } = {}): Digest {
+    const period = opts.period || 'day';
+    const now = new Date();
+
+    // Calculate period boundaries
+    let from: Date, to: Date;
+    if (period === 'day') {
+      // If date provided, use it; otherwise use today
+      if (opts.date) {
+        from = new Date(opts.date);
+        from.setHours(0, 0, 0, 0);
+      } else {
+        from = new Date(now);
+        from.setHours(0, 0, 0, 0);
+      }
+      to = new Date(from.getTime() + 86400000);
+    } else {
+      // Weekly: Monday through Sunday
+      if (opts.date) {
+        const d = new Date(opts.date);
+        const day = d.getDay();
+        const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+        from = new Date(d.setDate(diff));
+      } else {
+        const day = now.getDay();
+        const diff = now.getDate() - day + (day === 0 ? -6 : 1);
+        from = new Date(now);
+        from.setDate(diff);
+      }
+      from.setHours(0, 0, 0, 0);
+      to = new Date(from.getTime() + 7 * 86400000);
+    }
+
+    const fromISO = from.toISOString();
+    const toISO = to.toISOString();
+
+    // Query entries for this period
+    const entries = this._db.query({ from: fromISO, to: toISO, limit: 10000 });
+
+    // Calculate summary metrics
+    let totalAgentHours = 0;
+    let totalHumanEquivHours = 0;
+    let totalCostUsd = 0;
+    let completed = 0;
+    let failed = 0;
+    let running = 0;
+
+    const projectHours = new Map<string, number>();
+    const categoryHours = new Map<TaskCategory, number>();
+    const agentHours = new Map<string, number>();
+    const taskDurations: { task: string; project: string; category: TaskCategory; duration_minutes: number }[] = [];
+
+    for (const e of entries) {
+      const wallMs = e.wall_clock_ms ?? (e.end ? new Date(e.end).getTime() - new Date(e.start).getTime() : 0);
+      const hours = wallMs / 3600000;
+      totalAgentHours += hours;
+      totalCostUsd += e.cost_usd;
+
+      const heq = this.config.human_equivalents[e.category];
+      totalHumanEquivHours += hours * (heq?.multiplier || 8);
+
+      if (e.status === 'completed') completed++;
+      else if (e.status === 'failed') failed++;
+      else if (e.status === 'running') running++;
+
+      projectHours.set(e.project, (projectHours.get(e.project) || 0) + hours);
+      categoryHours.set(e.category, (categoryHours.get(e.category) || 0) + hours);
+      agentHours.set(e.agent, (agentHours.get(e.agent) || 0) + hours);
+
+      const durationMins = wallMs / 60000;
+      taskDurations.push({ task: e.task, project: e.project, category: e.category, duration_minutes: durationMins });
+    }
+
+    // Calculate savings
+    const avgRate = Object.values(this.config.human_equivalents).reduce((s, h) => s + h.human_rate_usd, 0) / 10;
+    const totalSavingsUsd = totalHumanEquivHours * avgRate - totalCostUsd;
+
+    // Build highlights
+    const highlights: DigestHighlight[] = [];
+
+    // Top project
+    let topProject = '';
+    let topProjectHours = 0;
+    for (const [proj, hours] of projectHours) {
+      if (hours > topProjectHours) {
+        topProject = proj;
+        topProjectHours = hours;
+      }
+    }
+    if (topProject) {
+      highlights.push({
+        type: 'top_project',
+        label: 'Top Project',
+        value: topProject,
+        metric: Math.round(topProjectHours * 100) / 100,
+      });
+    }
+
+    // Top category
+    let topCategory: TaskCategory | null = null;
+    let topCategoryHours = 0;
+    for (const [cat, hours] of categoryHours) {
+      if (hours > topCategoryHours) {
+        topCategory = cat;
+        topCategoryHours = hours;
+      }
+    }
+    if (topCategory) {
+      highlights.push({
+        type: 'top_category',
+        label: 'Top Category',
+        value: topCategory,
+        metric: Math.round(topCategoryHours * 100) / 100,
+      });
+    }
+
+    // Top agent
+    let topAgent = '';
+    let topAgentHours = 0;
+    for (const [agent, hours] of agentHours) {
+      if (hours > topAgentHours) {
+        topAgent = agent;
+        topAgentHours = hours;
+      }
+    }
+    if (topAgent) {
+      highlights.push({
+        type: 'top_agent',
+        label: 'Top Agent',
+        value: topAgent,
+        metric: Math.round(topAgentHours * 100) / 100,
+      });
+    }
+
+    // Longest task
+    taskDurations.sort((a, b) => b.duration_minutes - a.duration_minutes);
+    if (taskDurations.length > 0) {
+      highlights.push({
+        type: 'longest_task',
+        label: 'Longest Task',
+        value: taskDurations[0].task.slice(0, 50),
+        metric: Math.round(taskDurations[0].duration_minutes),
+      });
+    }
+
+    // Milestones
+    if (entries.length >= 10) {
+      highlights.push({
+        type: 'milestone',
+        label: 'Productive ' + (period === 'day' ? 'Day' : 'Week'),
+        value: `${entries.length}+ tasks completed!`,
+      });
+    }
+
+    // Top tasks (up to 5)
+    const topTasks = taskDurations.slice(0, 5);
+
+    // By day breakdown (for weekly digest)
+    let byDay: Digest['by_day'];
+    if (period === 'week') {
+      byDay = [];
+      const dayMap = new Map<string, { entries: number; hours: number; cats: Map<TaskCategory, number> }>();
+
+      for (const e of entries) {
+        const dayKey = e.start.split('T')[0];
+        if (!dayMap.has(dayKey)) {
+          dayMap.set(dayKey, { entries: 0, hours: 0, cats: new Map() });
+        }
+        const d = dayMap.get(dayKey)!;
+        d.entries++;
+        const wallMs = e.wall_clock_ms ?? (e.end ? new Date(e.end).getTime() - new Date(e.start).getTime() : 0);
+        d.hours += wallMs / 3600000;
+        d.cats.set(e.category, (d.cats.get(e.category) || 0) + wallMs / 3600000);
+      }
+
+      for (const [date, data] of dayMap) {
+        let topCat: TaskCategory | null = null;
+        let maxHours = 0;
+        for (const [cat, hrs] of data.cats) {
+          if (hrs > maxHours) {
+            topCat = cat;
+            maxHours = hrs;
+          }
+        }
+        byDay.push({
+          date,
+          entries: data.entries,
+          agent_hours: Math.round(data.hours * 100) / 100,
+          top_category: topCat,
+        });
+      }
+      byDay.sort((a, b) => a.date.localeCompare(b.date));
+    }
+
+    // Comparison with previous period
+    let prevFrom: Date, prevTo: Date;
+    if (period === 'day') {
+      prevFrom = new Date(from.getTime() - 86400000);
+      prevTo = from;
+    } else {
+      prevFrom = new Date(from.getTime() - 7 * 86400000);
+      prevTo = from;
+    }
+    const prevEntries = this._db.query({ from: prevFrom.toISOString(), to: prevTo.toISOString(), limit: 10000 });
+    const prevEntriesCount = prevEntries.length;
+    let prevHours = 0;
+    for (const e of prevEntries) {
+      const wallMs = e.wall_clock_ms ?? (e.end ? new Date(e.end).getTime() - new Date(e.start).getTime() : 0);
+      prevHours += wallMs / 3600000;
+    }
+
+    const entriesDelta = entries.length - prevEntriesCount;
+    const hoursDelta = Math.round((totalAgentHours - prevHours) * 100) / 100;
+    let direction: 'up' | 'down' | 'same' = 'same';
+    if (entriesDelta > 0 || hoursDelta > 0.5) direction = 'up';
+    else if (entriesDelta < 0 || hoursDelta < -0.5) direction = 'down';
+
+    return {
+      period,
+      period_start: fromISO,
+      period_end: toISO,
+      summary: {
+        total_entries: entries.length,
+        total_agent_hours: Math.round(totalAgentHours * 100) / 100,
+        total_human_equiv_hours: Math.round(totalHumanEquivHours * 100) / 100,
+        total_cost_usd: Math.round(totalCostUsd * 10000) / 10000,
+        total_savings_usd: Math.round(totalSavingsUsd * 100) / 100,
+        completed,
+        failed,
+        running,
+      },
+      highlights,
+      by_day: byDay,
+      top_tasks: topTasks,
+      comparison: {
+        vs_previous_period: {
+          entries_delta: entriesDelta,
+          hours_delta: hoursDelta,
+          direction,
+        },
+      },
     };
   }
 
